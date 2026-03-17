@@ -44,7 +44,7 @@ cd optimus-assistant
 
 pip install -r requirements.txt
 
-python optimus.py
+python main.py
 ```
 
 ```bash
