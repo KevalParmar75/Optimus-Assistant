@@ -14,7 +14,7 @@ from huggingface_hub import InferenceClient
 load_dotenv()
 
 from state  import AgentState
-from agents import ChatAgent, BrowserAgent, CodeAgent, MemoryAgent, ReminderAgent
+from agents import ChatAgent, BrowserAgent, CodeAgent, MemoryAgent, ReminderAgent, VisionAgent
 from tools.registry import get_tool_specs_text
 from ui.hud import (draw_agent, HUD_PALETTES, ASSETS_DIR)
 
@@ -22,11 +22,12 @@ from ui.hud import (draw_agent, HUD_PALETTES, ASSETS_DIR)
 LANG_CODES = {"en": "en-IN", "hi": "hi-IN", "gu": "gu-IN"}
 
 AGENT_VOICES = {
-    "chat":     "en-GB-RyanNeural",    # Optimus   — deep, British
-    "browser":  "en-US-AndrewNeural",  # Bumblebee — younger, faster
-    "code":     "en-GB-ThomasNeural",  # Wheeljack — technical
-    "memory":   "en-GB-RyanNeural",    # Perceptor — same base, slower delivery
-    "reminder": "en-US-GuyNeural",     # Ironhide  — gruff
+    "chat":     "en-GB-RyanNeural",
+    "browser":  "en-US-AndrewNeural",
+    "code":     "en-GB-ThomasNeural",
+    "memory":   "en-GB-RyanNeural",
+    "reminder": "en-US-GuyNeural",
+    "vision":   "en-GB-RyanNeural",   # Optimus sees and reports
 }
 
 LANG_VOICES = {
@@ -91,6 +92,39 @@ class Supervisor:
             return {**state, "active_agent": "chat",
                     "tool_name": "open_app", "tool_args": {"name": cmd_low}}
 
+        # ── Vision — screen awareness and clicking ──
+        if any(w in cmd_low for w in ["what's on screen", "what do you see",
+                                       "what's open", "describe screen",
+                                       "read the screen", "what does it say",
+                                       "click on", "click the", "find and click"]):
+            return {**state, "active_agent": "vision",
+                    "tool_name": "", "tool_args": {}}
+
+        # ── Vision — screen awareness ──
+        if any(w in cmd_low for w in ["what's on screen", "what is on screen",
+                                       "what do you see", "describe screen",
+                                       "what's open", "what's on my screen",
+                                       "what can you see", "look at screen"]):
+            return {**state, "active_agent": "vision",
+                    "tool_name": "", "tool_args": {}}
+
+        # Vision-guided interaction (when not browser-related)
+        if not self._browser_agent.is_open() and any(w in cmd_low for w in [
+                "click", "find on screen", "where is", "press the button"]):
+            return {**state, "active_agent": "vision",
+                    "tool_name": "", "tool_args": {}}
+
+        # ── Simple questions — always go to chat even if browser is open ──
+        CHAT_ONLY = ["what time", "what is the time", "current time",
+                     "what day", "what date", "today's date",
+                     "what's the weather", "how are you", "who are you",
+                     "tell me a joke", "what can you do",
+                     "pause music", "play music", "skip song",
+                     "next song", "stop music", "volume"]
+        if any(w in cmd_low for w in CHAT_ONLY):
+            return {**state, "active_agent": "chat",
+                    "tool_name": "", "tool_args": {}}
+
         # Browser — open or already open
         if self._browser_agent.is_open():
             if not any(w in cmd_low for w in ["open app", "open spotify",
@@ -131,6 +165,7 @@ Agents:
 - code:    write code, debug, explain code, run script, programming tasks
 - memory:  remember, recall, save, what did we talk about
 - reminder: remind me, set alarm, alert at time, note down with time
+- vision:  what's on screen, click something, describe what's visible, screen awareness
 
 Respond ONLY with JSON:
 {{"agent": "agent_name"}}"""
@@ -178,12 +213,16 @@ class OptimusApp(ctk.CTk):
         self._current_agent = "chat"   # tracks which character to show
 
         # ── Agents ──
-        self.memory_agent  = MemoryAgent()
-        self.browser_agent = BrowserAgent()
-        self.code_agent    = CodeAgent()
+        self.memory_agent   = MemoryAgent()
+        self.browser_agent  = BrowserAgent()
+        self.code_agent     = CodeAgent()
         self.reminder_agent = ReminderAgent()
-        self.chat_agent    = ChatAgent()
-        self.supervisor    = Supervisor(self.browser_agent)
+        self.chat_agent     = ChatAgent()
+        self.vision_agent   = VisionAgent()
+        self.supervisor     = Supervisor(self.browser_agent)
+
+        # Wire vision into browser so it can click accurately
+        self.browser_agent.set_vision(self.vision_agent)
 
         # Wire reminder speak
         self.reminder_agent.set_speak(self.speak, self)
@@ -245,15 +284,16 @@ class OptimusApp(ctk.CTk):
         workflow.add_node("code",       self.code_agent.run)
         workflow.add_node("memory",     self.memory_agent.run)
         workflow.add_node("reminder",   self.reminder_agent.run)
+        workflow.add_node("vision",     self.vision_agent.run)
         workflow.set_entry_point("supervisor")
         workflow.add_conditional_edges(
             "supervisor",
             lambda s: s["active_agent"],
             {"chat":    "chat",    "browser": "browser",
              "code":    "code",    "memory":  "memory",
-             "reminder":"reminder"}
+             "reminder":"reminder", "vision": "vision"}
         )
-        for node in ["chat", "browser", "code", "memory", "reminder"]:
+        for node in ["chat", "browser", "code", "memory", "reminder", "vision"]:
             workflow.add_edge(node, END)
         self.graph = workflow.compile()
 
@@ -266,7 +306,7 @@ class OptimusApp(ctk.CTk):
         palette   = HUD_PALETTES.get(self.status_text, HUD_PALETTES["STANDBY_EN"])
         pulse_val = self.pulse if self.status_text in (
             "LISTENING", "SPEAKING", "REMEMBERING",
-            "BROWSING", "CODING", "REMINDER"
+            "BROWSING", "CODING", "REMINDER", "SEEING"
         ) else 0
 
         self.canvas.delete("all")
@@ -294,8 +334,12 @@ class OptimusApp(ctk.CTk):
             self.status_text = "REMEMBERING"
         elif any(w in cmd for w in ["remind me", "reminder", "alert me"]):
             self.status_text = "REMINDER"
-        elif any(w in cmd for w in ["open chrome", "open brave", "go to",
-                                     "search on", "open browser"]) or self.browser_agent.is_open():
+        elif any(w in cmd for w in ["what's on screen", "what do you see",
+                                     "click on", "click the", "describe screen",
+                                     "what can you see", "look at screen"]):
+            self.status_text = "SEEING"
+        elif any(w in cmd for w in ["open chrome", "open brave", "open youtube",
+                                     "search on", "go to website"]) or self.browser_agent.is_open():
             self.status_text = "BROWSING"
         elif any(w in cmd for w in ["write code", "debug", "script", "function",
                                      "python", "javascript", "build a"]):

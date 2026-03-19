@@ -85,7 +85,6 @@ APP_NAME_MAP = {
     "calendar":        "calendar",
     "mail":            "mail",
     "vlc":             "vlc media player",
-    "spotify":         "spotify",
     "capcut":          "capcut",
     "calculator":      "calculator",
     "file explorer":   "file explorer",

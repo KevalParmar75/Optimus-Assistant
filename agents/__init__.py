@@ -3,3 +3,4 @@ from agents.browser_agent  import BrowserAgent
 from agents.code_agent     import CodeAgent
 from agents.memory_agent   import MemoryAgent
 from agents.reminder_agent import ReminderAgent
+from agents.vision_agent   import VisionAgent

@@ -29,6 +29,7 @@ HUD_PALETTES = {
     "BROWSING":    {"primary": "#ff6600", "secondary": "#aa3300", "visor": "#ff6600", "glow": "#662200"},
     "CODING":      {"primary": "#00ff88", "secondary": "#00aa55", "visor": "#00ff88", "glow": "#004422"},
     "REMINDER":    {"primary": "#ff44aa", "secondary": "#aa0066", "visor": "#ff44aa", "glow": "#660033"},
+    "SEEING":      {"primary": "#ffdd00", "secondary": "#aa8800", "visor": "#ffdd00", "glow": "#665500"},
 }
 
 # ── Optimus pixel art ──
