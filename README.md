@@ -1,163 +1,238 @@
-# 🤖 Optimus: Multilingual AI Voice Assistant
+# 🤖 Optimus — Transformers Universe AI Assistant
+> *"Autobots, roll out."*
 
-[![Python Version](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![Architecture](https://img.shields.io/badge/Architecture-Multimodel-purple.svg)]()
-[![UI Framework](https://img.shields.io/badge/UI-CustomTkinter-brightgreen.svg)]()
-[![Status](https://img.shields.io/badge/Status-Active%20Development-orange.svg)]()
-
-> **Optimus** is an advanced, multilingual, desktop-based AI voice assistant. Originally powered by **Qwen2.5-72B-Instruct**, Optimus is currently undergoing a **major architectural overhaul** toward a flexible multimodel brain, screen awareness, browser automation, and deep calendar/email integration — while keeping the same futuristic HUD you know.
+A voice-controlled AI assistant built around a Transformers universe theme. Each capability is handled by a different Transformer character with their own pixel art face, personality, and voice.
 
 ---
 
-## 🚧 Development Status
+## 🌟 The Team
 
-> **⚠️ Active Refactor in Progress**
-> Optimus is in a **polishing phase** following a major multimodel architecture shift. Core features are working; new capabilities listed below are partially implemented or under active development.
-
-### ✅ Stable & Working
-- Multilingual voice interaction (ENG / HIN / GUJ)
-- Futuristic animated HUD with state-aware visuals
-- Wake word + hotkey activation
-- App launcher via natural language
-- YouTube search & liked video playback
-- Persistent conversation memory
-
-### 🔄 In Progress
-- **Multimodel AI Architecture** — Qwen remains the core, with support for additional models being integrated for task-specific routing
-- **Screen Awareness** — Optimus can observe and reason about what's on your screen in real time
-- **Full Browser Automation** — End-to-end control of browser actions via natural language
-- **Calendar & Email Integration** — Reading, drafting, and managing calendar events and emails
-- **RAG + PageIndex Memory** — Hybrid retrieval combining normal RAG with a page-indexed document store for richer, context-aware long-term memory
+| Character | Role | Specialty | Color |
+|---|---|---|---|
+| **Optimus Prime** | Orchestrator | General chat, web search, app control | 🔵 Cyan |
+| **Bumblebee** | Browser Agent | Web browsing, YouTube, Google | 🟡 Yellow |
+| **Wheeljack** | Code Agent | Code generation, debugging, execution | 🟢 Green |
+| **Ironhide** | Reminder Agent | Reminders, scheduling, alerts | 🔴 Red |
+| **Perceptor** | Memory Agent | Long-term memory, notes, recall | 🔴 Dark Red |
 
 ---
 
-## ✨ Features
+## ✅ What It Can Do Right Now
 
-- 🌍 **Multilingual Support:** Converses fluently in English (ENG), Hindi (HIN), and Gujarati (GUJ)
-- 🧠 **Multimodel AI Brain:** Flexible model routing — Qwen2.5-72B-Instruct at the core, with support for additional models
-- 🎨 **Futuristic HUD UI:** Built with `CustomTkinter` and `Tkinter` canvas, featuring real-time state animations (Standby, Listening, Processing, Speaking)
-- 🎙️ **Voice Activation:** Press `Left Shift` to trigger listening, or use the wake word **"Optimus"**
-- 🚀 **App Launcher:** Opens local desktop applications natively using natural language
-- 🎵 **Media Controller:** Plays requested songs or searches your liked videos on YouTube
-- 💾 **Hybrid Memory System:** Combines persistent conversation context with RAG + PageIndex retrieval for smarter, longer-term awareness
-- 🖥️ **Screen Awareness** *(in development)*: Optimus observes and understands your screen in real time
-- 🌐 **Browser Automation** *(in development)*: Full control of browser tasks via voice or text commands
-- 📅 **Calendar & Email** *(in development)*: Reads and manages your schedule and inbox
+### 🎙️ Voice Control
+- **Wake word** — say *"Optimus"* to activate (45 second active window)
+- **Always listening** for wake word in background — zero CPU when idle
+- **Auto language detection** — English, Hindi, Gujarati
+- **Voice interrupt** — say *"stop"* to cut speech mid-sentence
+- **Multi-language responses** — replies in whichever language you spoke
+
+### 🌐 Browser Automation (Bumblebee)
+- *"Open YouTube and search lofi music"*
+- *"Play Jogi on YouTube"* — searches and auto-plays first result
+- *"Search LeetCode on Google"*
+- *"Open GitHub"* / *"Go to gmail"*
+- *"Close tab"* — closes the browser tab
+- Uses your existing Chrome — no new window, no login needed
+
+### 👁️ Screen Vision (Qwen VL)
+- *"What's on my screen?"* — describes everything visible
+- *"Click on the search bar"* — finds and clicks exact element
+- *"Click the first video"* — vision-guided click
+- *"What does it say?"* — reads text on screen
+- Screenshots stay in RAM — never written to disk
+
+### 📱 App Control
+- *"Open VS Code"* / *"Open Spotify"* / *"Open WhatsApp"*
+- *"Open calculator"* / *"Open file explorer"*
+- All apps indexed via AppOpener — works with your installed apps
+
+### 🔍 Web Search
+- *"Search who is Elon Musk"*
+- *"Tell me about quantum computing"*
+- Uses DuckDuckGo — no API key needed
+
+### 🧠 Memory System
+- **Auto-saves** every conversation silently in background
+- **ChromaDB** for general conversations and preferences
+- **LlamaIndex** for code and posts
+- **Raw log** at `memory/conversation_log.jsonl` — always backed up
+- *"Do you remember when we talked about..."* — semantic recall
+- *"Remember this"* — explicitly save current exchange
+
+### 📝 Notes
+- *"Take a note — I have a meeting at 3pm"*
+- *"Note down call mom tomorrow"*
+- *"Read my notes"* / *"Show my notes"*
+- Saved to `memory/notes.txt` with timestamps
+
+### ⏰ Reminders
+- *"Remind me to go to market at 5:45"*
+- *"Set a reminder at 9pm to call mom"*
+- *"List my reminders"*
+- Windows toast notification + Optimus speaks it at trigger time
+
+### 💻 Code Agent (Wheeljack)
+- *"Write a Flask API with two endpoints"*
+- *"Debug this Python code"*
+- *"Explain what this function does"*
+- Uses `Qwen2.5-Coder-32B` — specialized code model
+
+### 📱 WhatsApp
+- *"WhatsApp Rahul and say I'll be late"*
+- *"Send a message to Mom saying I'm on my way"*
+- Vision-powered — finds contact, types, sends
 
 ---
 
-## 🛠️ Prerequisites
+## 🏗️ Architecture
 
-- **Python 3.8+**
-- **Microphone** connected and configured
-- **Hugging Face API Token** — [Get one here](https://huggingface.co/settings/tokens)
-- **Google Cloud Console Project** — For YouTube Data API v3 credentials
-
----
-
-## 🚀 Installation & Setup
-
-### 1. Clone the Repository
-
-```bash
-git clone https://github.com/KevalParmar75/Assistant-3.0.git
-cd Assistant-3.0
+```
+E:\optimus\
+  ├── main.py                 ← Orchestrator, UI, wake word, LangGraph
+  ├── state.py                ← Shared AgentState TypedDict
+  ├── agents\
+  │   ├── chat_agent.py       ← Optimus  | Qwen 2.5 72B
+  │   ├── browser_agent.py    ← Bumblebee| subprocess + pyautogui
+  │   ├── code_agent.py       ← Wheeljack| Qwen 2.5 Coder 32B
+  │   ├── memory_agent.py     ← Perceptor| ChromaDB + LlamaIndex
+  │   ├── reminder_agent.py   ← Ironhide | APScheduler
+  │   └── vision_agent.py     ← Eyes     | Qwen 2.5 VL
+  ├── tools\
+  │   └── registry.py         ← All tools registered here
+  ├── ui\
+  │   └── hud.py              ← All 5 pixel art characters + HUD states
+  ├── memory\
+  │   ├── chromadb\           ← Vector embeddings
+  │   ├── llamaindex\         ← Code/post index
+  │   ├── conversation_log.jsonl  ← Raw backup
+  │   └── notes.txt           ← Quick notes
+  └── .env                    ← HF_TOKEN, CHROME_PATH
 ```
 
-### 2. Install Dependencies
-
-```bash
-pip install -r requirements.txt
+### LangGraph Flow
 ```
-
-### 3. Configure Environment Variables
-
-Create a `.env` file in the root directory:
-
-```env
-HF_TOKEN=your_hugging_face_token_here
-```
-
-### 4. Setup YouTube OAuth (For Liked Videos)
-
-1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project and enable the **YouTube Data API v3**
-3. Create **OAuth 2.0 Client ID** credentials (select "Desktop app")
-4. Download the JSON file, rename it to `client_secret.json`, and place it in the project root
-
-### 5. Run Optimus
-
-```bash
-python optimus.py
+Voice Input
+    ↓
+Supervisor (routes to correct agent)
+    ↓
+Agent runs (chat/browser/code/memory/reminder/vision)
+    ↓
+Response spoken (Edge TTS)
+    ↓
+Auto-saved to memory (background thread)
 ```
 
 ---
 
-## 🎮 Usage Guide
+## 🎨 HUD States
 
-Once launched, the Optimus HUD will appear. Here's how to interact with it:
-
-| Action | How |
-|--------|-----|
-| Move the HUD | Click and drag anywhere on screen |
-| Switch language | Click **ENG**, **HIN**, or **GUJ** toggles |
-| Trigger listening | Press **Left Shift** or say **"Optimus"** |
-
-### Example Commands
-
-- 🖥️ `"Optimus, open Calculator"`
-- 🎵 `"Play Blinding Lights on YouTube"`
-- 🔍 `"Search my liked videos for Python tutorials"`
-- 🧠 `"What is the distance to the moon?"`
-- 🌐 `"Open Gmail and check my latest emails"` *(coming soon)*
-- 📅 `"What's on my calendar tomorrow?"` *(coming soon)*
+| State | Color | When |
+|---|---|---|
+| STANDBY | 🔵 Cyan | Idle, waiting for wake word |
+| LISTENING | 🔴 Red | Wake word heard, active window |
+| PROCESSING | 🟡 Yellow | Thinking / calling API |
+| SPEAKING | 🟢 Green | TTS playing |
+| BROWSING | 🟠 Orange | Bumblebee controlling browser |
+| CODING | 🟢 Bright | Wheeljack generating code |
+| REMEMBERING | 🟣 Purple | Memory operation |
+| REMINDER | 🩷 Pink | Reminder firing |
+| SEEING | 🟡 Gold | Vision agent reading screen |
 
 ---
 
-## ⚠️ Troubleshooting
+## 🔧 Setup
 
-**`ModuleNotFoundError` for PyAudio:**
-```bash
-# Windows
-pip install pyaudio
-
-# Linux
-sudo apt install portaudio19-dev python3-pyaudio && pip install pyaudio
-
-# Mac
-brew install portaudio && pip install pyaudio
+### Requirements
+```
+Python 3.12 (from python.org — NOT Microsoft Store)
 ```
 
-**YouTube Auth Hangs on First Run:**  
-A browser window will open asking you to sign into Google. Once approved, a `token.pickle` file is saved so you won't need to log in again.
+### Install
+```powershell
+cd E:\optimus
+python -m venv venv
+.\venv\Scripts\activate
+pip install customtkinter speechrecognition pywhatkit edge-tts pygame pyautogui
+pip install langgraph huggingface-hub duckduckgo-search AppOpener python-dotenv
+pip install chromadb sentence-transformers llama-index
+pip install playwright apscheduler win10toast mss Pillow f5-tts gradio_client
+playwright install chromium
+```
 
-**Audio Playing Too Fast/Slow:**  
-Ensure your system's default audio output is properly configured and not exclusively locked by another application.
+### .env file
+```
+HF_TOKEN=your_huggingface_token_here
+CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
+```
+
+### First run setup
+```powershell
+# Index your installed apps (run once)
+python setup_apps.py
+
+# Run Optimus
+python main.py
+```
 
 ---
 
-## 🤝 Contributing
+## 🎙️ Voice Commands Reference
 
-Contributions are welcome and greatly appreciated!
-
-1. Fork the Project
-2. Create your Feature Branch: `git checkout -b feature/AmazingFeature`
-3. Commit your Changes: `git commit -m 'Add some AmazingFeature'`
-4. Push to the Branch: `git push origin feature/AmazingFeature`
-5. Open a Pull Request
+| Say | What happens |
+|---|---|
+| *"Optimus"* | Activates assistant |
+| *"Stop"* | Interrupts speech |
+| *"Open YouTube"* | Opens YouTube in Chrome |
+| *"Play [song] on YouTube"* | Searches and plays |
+| *"Search [query] on Google"* | Opens Google search |
+| *"What's on my screen?"* | Vision describes screen |
+| *"Click on [element]"* | Vision finds and clicks |
+| *"Open [app name]"* | Launches app |
+| *"Remind me to [X] at [time]"* | Sets reminder |
+| *"Note down [text]"* | Saves a note |
+| *"Read my notes"* | Reads notes back |
+| *"Do you remember [X]"* | Searches memory |
+| *"Remember this"* | Saves last exchange |
+| *"What time is it?"* | Instant system time |
+| *"What's today's date?"* | Instant system date |
+| *"Write a [code] function"* | Wheeljack generates code |
+| *"WhatsApp [name] and say [msg]"* | Sends WhatsApp message |
+| *"Close tab"* | Closes browser tab |
 
 ---
 
-## 🗺️ Roadmap
+## 🔲 Coming Soon
 
-- [x] Multilingual voice assistant with HUD
-- [x] App launcher & YouTube integration
-- [x] Persistent conversation memory
-- [ ] Multimodel AI routing architecture
-- [ ] RAG + PageIndex hybrid memory
-- [ ] Screen awareness
-- [ ] Full browser automation
-- [ ] Calendar & email integration
+- [ ] Taskbar multi-character HUD (all 5 visible, active one scales up)
+- [ ] Eye blinking + head movement animations
+- [ ] Voice cloning (ElevenLabs — character-accurate voices)
+- [ ] Transformation sound effects
+- [ ] Twitter / LinkedIn posting
+- [ ] IDE code injection (type directly into VS Code)
+- [ ] Voice authentication (your voice only)
+- [ ] Screen vision fully integrated into all browser actions
+
+---
+
+## ⚠️ Known Issues
+
+| Issue | Cause | Fix |
+|---|---|---|
+| Memory embedding fails | Microsoft Store Python can't load `fbgemm.dll` | Install Python from python.org |
+| Interrupt listener fails | Two microphones can't open simultaneously | Stop words detected in main loop instead |
+| Browser opens new window | Chrome debug port not configured | Add `CHROME_PATH` to `.env` |
+
+---
+
+## 🧠 Models Used
+
+| Purpose | Model | Provider |
+|---|---|---|
+| General chat | Qwen/Qwen2.5-72B-Instruct | HuggingFace (free) |
+| Code generation | Qwen/Qwen2.5-Coder-32B-Instruct | HuggingFace (free) |
+| Screen vision | Qwen/Qwen2.5-VL-7B-Instruct | HuggingFace (free) |
+| Memory embeddings | all-MiniLM-L6-v2 | Local (sentence-transformers) |
+| Text to speech | Edge TTS (Ryan/Andrew/Thomas/Guy) | Microsoft (free) |
 
 ---
 
