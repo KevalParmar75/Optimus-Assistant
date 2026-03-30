@@ -16,7 +16,7 @@ load_dotenv()
 from state  import AgentState
 from agents import ChatAgent, BrowserAgent, CodeAgent, MemoryAgent, ReminderAgent, VisionAgent
 from tools.registry import get_tool_specs_text
-from ui.hud import (draw_agent, HUD_PALETTES, ASSETS_DIR)
+from ui.hud import TransformerHUD, ASSETS_DIR
 
 # ── Voice config ──
 LANG_CODES = {"en": "en-IN", "hi": "hi-IN", "gu": "gu-IN"}
@@ -219,79 +219,59 @@ Respond ONLY with JSON:
 # ================================================================
 ctk.set_appearance_mode("Dark")
 
-class OptimusApp(ctk.CTk):
-    def __init__(self):
-        super().__init__()
-        self.overrideredirect(True)
-        self.geometry("440x640")
-        self.config(background="#000001")
-        self.attributes("-transparentcolor", "#000001", "-topmost", True)
-        self.bind("<Button-1>", self._drag_start)
-        self.bind("<B1-Motion>", self._drag_move)
 
-        # ── State ──
-        self.status_text   = "STANDBY_EN"
-        self.current_lang  = "en"
+class OptimusApp(TransformerHUD):  # <-- NOW INHERITS FROM THE NEW HUD
+    def __init__(self):
+        # This automatically creates the window, 5-char canvas, drag mechanics,
+        # and starts the new HUD animation loop!
+        super().__init__()
+
+        # Add a little extra height to the window for the language buttons below the characters
+        self.geometry(f"{self._strip_w}x{self._strip_h + 40}")
+
+        # ── State (AI Logic) ──
         self.is_processing = False
         self.stop_speaking = False
-        self.pulse         = 0
-        self.pulse_dir     = 1
-        self._current_agent = "chat"   # tracks which character to show
 
         # ── Agents ──
-        self.memory_agent   = MemoryAgent()
-        self.browser_agent  = BrowserAgent()
-        self.code_agent     = CodeAgent()
+        self.memory_agent = MemoryAgent()
+        self.browser_agent = BrowserAgent()
+        self.code_agent = CodeAgent()
         self.reminder_agent = ReminderAgent()
-        self.chat_agent     = ChatAgent()
-        self.vision_agent   = VisionAgent()
-        self.supervisor     = Supervisor(self.browser_agent)
+        self.chat_agent = ChatAgent()
+        self.vision_agent = VisionAgent()
+        self.supervisor = Supervisor(self.browser_agent)
 
-        # Wire vision into browser so it can click accurately
         self.browser_agent.set_vision(self.vision_agent)
-
-        # Wire reminder speak
         self.reminder_agent.set_speak(self.speak, self)
 
         # ── Build LangGraph ──
         self._build_graph()
 
-        # ── UI ──
-        self.canvas = tk.Canvas(self, width=440, height=520,
-                                bg="#000001", highlightthickness=0)
-        self.canvas.pack()
-
-        self.status_label = ctk.CTkLabel(
-            self, text="STANDBY", font=("Consolas", 11, "bold"),
-            text_color="#00eaff", fg_color="transparent"
-        )
-        self.status_label.pack(pady=2)
-
+        # ── Language Buttons ──
+        # Places the familiar CTk buttons nicely below the 5 characters
         self.lang_frame = ctk.CTkFrame(self, fg_color="#0a0a0a", corner_radius=20)
-        self.lang_frame.pack(pady=6)
+        self.lang_frame.place(relx=0.5, y=self._strip_h + 30, anchor="s")
+
         self.lang_btns = {}
-        for label, code in [("ENG","en"),("HIN","hi"),("GUJ","gu")]:
+        for label, code in [("ENG", "en"), ("HIN", "hi"), ("GUJ", "gu")]:
             btn = ctk.CTkButton(
-                self.lang_frame, text=label, width=65,
+                self.lang_frame, text=label, width=65, height=24,
                 font=("Consolas", 11, "bold"),
                 command=lambda c=code: self._set_lang(c)
             )
-            btn.pack(side="left", padx=6)
+            btn.pack(side="left", padx=6, pady=4)
             self.lang_btns[code] = btn
         self._update_lang_buttons()
 
-        self._animate()
-        # Delay thread starts slightly to let mainloop stabilize
         self.after(500, self._start_threads)
 
     def _start_threads(self):
-        """Start background threads after mainloop is stable."""
         threading.Thread(target=self._safe_listen_loop, daemon=True).start()
         print("[Optimus] Background threads started.")
 
     def _safe_listen_loop(self):
-        """Wrapper that prevents listen loop crashes from killing the app."""
-        time.sleep(1.0)  # extra delay — let mainloop fully stabilize
+        time.sleep(1.0)
         try:
             self._listen_loop()
         except Exception as e:
@@ -299,14 +279,9 @@ class OptimusApp(ctk.CTk):
             import traceback
             traceback.print_exc()
 
-    # ── Drag ──
-    def _drag_start(self, e): self._dx, self._dy = e.x, e.y
-    def _drag_move(self, e):
-        self.geometry(f"+{self.winfo_x()+e.x-self._dx}+{self.winfo_y()+e.y-self._dy}")
-
     def _set_lang(self, code):
-        self.current_lang = code
-        self.status_text  = f"STANDBY_{code.upper()}"
+        self.set_language(code)  # Safely updates the HUD
+        self.set_status(f"STANDBY_{code.upper()}")
         self._update_lang_buttons()
 
     def _update_lang_buttons(self):
@@ -317,53 +292,33 @@ class OptimusApp(ctk.CTk):
             else:
                 btn.configure(fg_color="#222222", text_color="#888888")
 
-    # ── LangGraph ──
-    def _build_graph(self):
-        workflow = StateGraph(AgentState)
-        workflow.add_node("supervisor", self.supervisor.route)
-        workflow.add_node("chat",       self.chat_agent.run)
-        workflow.add_node("browser",    self.browser_agent.run)
-        workflow.add_node("code",       self.code_agent.run)
-        workflow.add_node("memory",     self.memory_agent.run)
-        workflow.add_node("reminder",   self.reminder_agent.run)
-        workflow.add_node("vision",     self.vision_agent.run)
-        workflow.add_node("whatsapp",   self._whatsapp_node)
-        workflow.set_entry_point("supervisor")
-        workflow.add_conditional_edges(
-            "supervisor",
-            lambda s: s["active_agent"],
-            {"chat":    "chat",    "browser":   "browser",
-             "code":    "code",    "memory":    "memory",
-             "reminder":"reminder","vision":    "vision",
-             "whatsapp":"whatsapp"}
-        )
-        for node in ["chat", "browser", "code", "memory", "reminder", "vision", "whatsapp"]:
-            workflow.add_edge(node, END)
-        self.graph = workflow.compile()
-
-    # ── Animation ──
-    def _animate(self):
-        self.pulse += self.pulse_dir
-        if self.pulse >= 8: self.pulse_dir = -1
-        if self.pulse <= 0: self.pulse_dir =  1
-
-        palette   = HUD_PALETTES.get(self.status_text, HUD_PALETTES["STANDBY_EN"])
-        pulse_val = self.pulse if self.status_text in (
-            "LISTENING", "SPEAKING", "REMEMBERING",
-            "BROWSING", "CODING", "REMINDER", "SEEING"
-        ) else 0
-
-        self.canvas.delete("all")
-        draw_agent(self._current_agent, self.canvas, 220, 260, palette, pulse_val)
-
-        display = self.status_text.replace("STANDBY_", "").replace("_", " ")
-        self.status_label.configure(text=display, text_color=palette["primary"])
-        self.after(60, self._animate)
-
     def _switch_character(self, agent: str):
-        """Swap to the right Transformer character."""
-        if agent != self._current_agent:
-            self._current_agent = agent
+        """Triggers the scale-up and glow effect for the active character."""
+        self.set_agent(agent)
+
+        # ── LangGraph ──
+    def _build_graph(self):
+            workflow = StateGraph(AgentState)
+            workflow.add_node("supervisor", self.supervisor.route)
+            workflow.add_node("chat", self.chat_agent.run)
+            workflow.add_node("browser", self.browser_agent.run)
+            workflow.add_node("code", self.code_agent.run)
+            workflow.add_node("memory", self.memory_agent.run)
+            workflow.add_node("reminder", self.reminder_agent.run)
+            workflow.add_node("vision", self.vision_agent.run)
+            workflow.add_node("whatsapp", self._whatsapp_node)
+            workflow.set_entry_point("supervisor")
+            workflow.add_conditional_edges(
+                "supervisor",
+                lambda s: s["active_agent"],
+                {"chat": "chat", "browser": "browser",
+                 "code": "code", "memory": "memory",
+                 "reminder": "reminder", "vision": "vision",
+                 "whatsapp": "whatsapp"}
+            )
+            for node in ["chat", "browser", "code", "memory", "reminder", "vision", "whatsapp"]:
+                workflow.add_edge(node, END)
+            self.graph = workflow.compile()
 
     # ── Processing ──
     def _process(self, command: str):

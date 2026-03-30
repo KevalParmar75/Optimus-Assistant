@@ -1,39 +1,68 @@
 """
-HUD — Transformers Universe UI
-Optimus = pixel art (default)
-All others = animated GIF
+HUD — Transformers Universe Taskbar UI
+Horizontal strip, draggable, all 5 characters visible.
+Active agent scales up + glows. Eye blinking + mouth animation.
 """
 import tkinter as tk
-from PIL import Image
-import os
+import random
+import time
+import threading
+from pathlib import Path
 
-ASSETS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
-
-# ── Agent → GIF filename mapping ──
-AGENT_GIF = {
-    "browser":  "bumblebee.gif",
-    "code":     "wheeljack.gif",
-    "memory":   "perceptor.gif",
-    "reminder": "ironhide.gif",
-}
+BASE_DIR = Path(__file__).resolve().parent.parent
+ASSETS_DIR = BASE_DIR / "assets"
 
 # ── HUD state palettes ──
 HUD_PALETTES = {
-    "STANDBY_EN":  {"primary": "#00eaff", "secondary": "#0077aa", "visor": "#00eaff", "glow": "#004466"},
-    "STANDBY_HI":  {"primary": "#ff9900", "secondary": "#cc6600", "visor": "#ff9900", "glow": "#663300"},
-    "STANDBY_GU":  {"primary": "#00ff9c", "secondary": "#00aa66", "visor": "#00ff9c", "glow": "#004433"},
-    "LISTENING":   {"primary": "#ff2d2d", "secondary": "#aa0000", "visor": "#ff2d2d", "glow": "#550000"},
-    "PROCESSING":  {"primary": "#ffd500", "secondary": "#aa8800", "visor": "#ffd500", "glow": "#665500"},
-    "SPEAKING":    {"primary": "#00ff9c", "secondary": "#00aa66", "visor": "#00ff9c", "glow": "#004433"},
-    "REMEMBERING": {"primary": "#cc44ff", "secondary": "#880099", "visor": "#cc44ff", "glow": "#440066"},
-    "BROWSING":    {"primary": "#ff6600", "secondary": "#aa3300", "visor": "#ff6600", "glow": "#662200"},
-    "CODING":      {"primary": "#00ff88", "secondary": "#00aa55", "visor": "#00ff88", "glow": "#004422"},
-    "REMINDER":    {"primary": "#ff44aa", "secondary": "#aa0066", "visor": "#ff44aa", "glow": "#660033"},
-    "SEEING":      {"primary": "#ffdd00", "secondary": "#aa8800", "visor": "#ffdd00", "glow": "#665500"},
+    "STANDBY_EN":  {"primary": "#00eaff", "visor": "#00eaff", "glow": "#004466"},
+    "STANDBY_HI":  {"primary": "#ff9900", "visor": "#ff9900", "glow": "#663300"},
+    "STANDBY_GU":  {"primary": "#00ff9c", "visor": "#00ff9c", "glow": "#004433"},
+    "LISTENING":   {"primary": "#ff2d2d", "visor": "#ff2d2d", "glow": "#550000"},
+    "PROCESSING":  {"primary": "#ffd500", "visor": "#ffd500", "glow": "#665500"},
+    "SPEAKING":    {"primary": "#00ff9c", "visor": "#00ff9c", "glow": "#004433"},
+    "REMEMBERING": {"primary": "#cc44ff", "visor": "#cc44ff", "glow": "#440066"},
+    "BROWSING":    {"primary": "#ff6600", "visor": "#ff6600", "glow": "#662200"},
+    "CODING":      {"primary": "#00ff88", "visor": "#00ff88", "glow": "#004422"},
+    "REMINDER":    {"primary": "#ff44aa", "visor": "#ff44aa", "glow": "#660033"},
+    "SEEING":      {"primary": "#ffdd00", "visor": "#ffdd00", "glow": "#665500"},
 }
 
-# ── Optimus pixel art ──
-_HEAD_GRID = [
+# ── Agent order in strip ──
+AGENT_ORDER = ["chat", "browser", "code", "memory", "reminder"]
+
+# ── Pixel sizes ──
+PS_SMALL  = 5    # inactive characters
+PS_ACTIVE = 10   # active character
+
+# ── Strip dimensions (calculated dynamically) ──
+STRIP_COLS = 40  # all grids are 40 wide
+STRIP_ROWS = 44  # max grid height
+
+CHAR_W_SMALL  = STRIP_COLS * PS_SMALL   # 200
+CHAR_H_SMALL  = STRIP_ROWS * PS_SMALL   # 220
+CHAR_W_ACTIVE = STRIP_COLS * PS_ACTIVE  # 400
+CHAR_H_ACTIVE = STRIP_ROWS * PS_ACTIVE  # 440
+
+PADDING       = 12   # between characters
+STRIP_H       = CHAR_H_ACTIVE + 40   # total strip height
+
+# ── Blink config per character ──
+BLINK_CONFIG = {
+    "chat":     {"min": 3.5, "max": 6.0, "dur": 0.15},
+    "browser":  {"min": 2.0, "max": 4.5, "dur": 0.12},
+    "code":     {"min": 3.5, "max": 6.0, "dur": 0.15},
+    "memory":   {"min": 5.0, "max": 9.0, "dur": 0.18},
+    "reminder": {"min": 7.0, "max": 12.0,"dur": 0.20},
+}
+
+# ── Mouth animation ──
+# 3 frames: 0=closed, 1=half, 2=open  (cycled at 100ms while SPEAKING)
+MOUTH_FRAME_MS = 100
+
+# ================================================================
+# OPTIMUS pixel grid
+# ================================================================
+_OP_GRID = [
     "1111111111111111111111111111111111111111",
     "1111111111111111111111111111111111111111",
     "1115311111111111111111111111111111131111",
@@ -64,7 +93,7 @@ _HEAD_GRID = [
     "4381181883333333218888112222232181811111",
     "3381188858111113388888822111118888811111",
     "3381188811221118181881818111121118811811",
-    "3381188881611166181181811611161118811811",
+    "3381188881611166181181811611161118811811",  # row 30: mouth at cols 17-22 (char '6')
     "3381188181812111818888111111111118811811",
     "3381158881881111188888111111111118811111",
     "3318181118881888888888188881188111818111",
@@ -84,46 +113,20 @@ _HEAD_GRID = [
     "1111188818881188877888818811188188811111",
     "1111111111111111111111111111111111111111",
 ]
-
-_COLOR_MAP = {
-    "1": None,       "2": "#081428",  "3": "#102a6e",
-    "4": "#1a4898",  "5": "#2d6fc0",  "6": "#00ccff",
-    "7": "#c8d8e8",  "8": "#606878",
+_OP_COLORS = {
+    "1": None, "2": "#081428", "3": "#102a6e",
+    "4": "#1a4898", "5": "#2d6fc0", "6": "#00ccff",
+    "7": "#c8d8e8", "8": "#606878",
 }
-
-
-def draw_optimus(canvas, cx: int, cy: int, palette: dict, pulse: int = 0):
-    PS           = 10
-    COLS         = len(_HEAD_GRID[0])
-    ROWS         = len(_HEAD_GRID)
-    ox           = cx - (COLS * PS) // 2
-    oy           = cy - (ROWS * PS) // 2
-    visor_color  = palette["visor"]
-    glow_color   = palette["glow"]
-
-    for ri, row in enumerate(_HEAD_GRID):
-        for ci, cell in enumerate(row):
-            if cell == "1":
-                continue
-            x0 = ox + ci * PS
-            y0 = oy + ri * PS
-            x1 = x0 + PS
-            y1 = y0 + PS
-            if cell == "6":
-                if pulse > 0:
-                    canvas.create_rectangle(x0-2, y0-2, x1+2, y1+2,
-                                            fill=glow_color, outline="")
-                fill = visor_color
-            else:
-                fill = _COLOR_MAP.get(cell)
-                if fill is None:
-                    continue
-            canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline="")
-
+# Mouth rows/cols in the Optimus grid (row index, col range)
+_OP_MOUTH_ROW = 30
+_OP_MOUTH_COLS = range(17, 23)
+_OP_MOUTH_OPEN_COLOR  = "#c8d8e8"
+_OP_MOUTH_HALF_COLOR  = "#404858"
+_OP_MOUTH_CLOSE_COLOR = "#606878"
 
 # ================================================================
-# BUMBLEBEE — Browser Agent — extracted from reference
-# Y=yellow  D=dark gold  O=shadow  K=dark grey  G=mid grey  R=red autobot  6=blue eyes
+# BUMBLEBEE pixel grid
 # ================================================================
 _BB_GRID = [
     "1111GDD111111111111111111111111111111111",
@@ -147,7 +150,7 @@ _BB_GRID = [
     "1111111OGGDDOGKK111KKGOG1GDDDDDDGGOGKKG1",
     "1DD11111O1DOK111111111K11GODDDDOG11111K1",
     "GDYD1111D1DG111KGK1111111GOGOOOO11111111",
-    "1DDYDOG1G11K1D1111666611111GGG1166611G11",
+    "1DDYDOG1G11K1D1111666611111GGG1166611G11",  # row 21: mouth col 4-7, eyes col 18-21,25-27
     "GGODDYDDOG11GD11116GGG611KG1GG116GG611OO",
     "GDOGOODDGGDGGDO11166G61111GGDD116G66111D",
     "GDDDOGD1111GGDDG1116661111DOOOG1G6611G1G",
@@ -175,10 +178,11 @@ _BB_COLORS = {
     "1": None, "Y": "#FFD000", "D": "#C08800", "O": "#7A5000",
     "K": "#282A2E", "G": "#585A60", "R": "#CC1A10", "6": "#1A88FF",
 }
+_BB_MOUTH_ROW  = 21
+_BB_MOUTH_COLS = range(4, 8)
 
 # ================================================================
-# WHEELJACK — Code Agent — extracted from reference
-# E=bright green  F=mid green  H=dark green  W=white  G=grey  K=dark  6=cyan visor  R=red autobot
+# WHEELJACK pixel grid
 # ================================================================
 _WJ_GRID = [
     "111111111111111111GWWWWWW111111111111111",
@@ -202,7 +206,7 @@ _WJ_GRID = [
     "111WWWWG11111HK11KGG1111GGGGGG11111WWW11",
     "111GWWWWWG111KKK1G6666GG1KGGG1GG611WWK11",
     "1111WWWWWWWGK11G1G6GG6666GKKG66G61KWG111",
-    "1111KWGWWWWWWG1GK1G666666GGGG666G1WG1111",
+    "1111KWGWWWWWWG1GK1G666666GGGG666G1WG1111",  # row 21: mouth area
     "11111KGWWWW11GGGGGK1KGGGGGGGGGG1K11G1111",
     "111111GWWWG11GKGGGWGGKKKKGGWGKKGW1KK1111",
     "111111WWWWG11GKGGGWWWWWWWWGWWWWWG1KK1111",
@@ -230,10 +234,11 @@ _WJ_COLORS = {
     "1": None, "E": "#44AA22", "F": "#2A7010", "H": "#184008",
     "K": "#202820", "G": "#505850", "W": "#D0D8D0", "6": "#00C8FF", "R": "#CC1A10",
 }
+_WJ_MOUTH_ROW  = 22
+_WJ_MOUTH_COLS = range(18, 24)
 
 # ================================================================
-# IRONHIDE — Reminder Agent — extracted from reference
-# R=bright red  D=dark red  O=shadow red  K=dark grey  G=mid grey  S=silver  6=blue eyes
+# IRONHIDE pixel grid
 # ================================================================
 _IH_GRID = [
     "1111111111DD1111111111111111111111111111",
@@ -258,7 +263,7 @@ _IH_GRID = [
     "111KKKG1OS111111111111111KK11DOODK111111",
     "1111KKGKOSK1111111KKK11111111DDDD111KK1K",
     "1111K1GKOGK1O1D1111K1KKKK111111111KK111G",
-    "1111K1K11G1111D111111661111KGGGG11661111",
+    "1111K1K11G1111D111111661111KGGGG11661111",  # row 22: mouth col 5-9
     "111111K11K1111OD11KKK1KKGKKGKKGG11KKKKD1",
     "11K1K1111K1111ODRD11GGGGGK111KKKG1KGG1R1",
     "11KK111111111111DRRD1KK111111KKKGKKK1RR1",
@@ -285,10 +290,11 @@ _IH_COLORS = {
     "1": None, "R": "#CC2000", "D": "#8A1200", "O": "#500800",
     "K": "#282020", "G": "#585050", "S": "#A09090", "6": "#1A88FF",
 }
+_IH_MOUTH_ROW  = 22
+_IH_MOUTH_COLS = range(5, 10)
 
 # ================================================================
-# PERCEPTOR — Memory Agent — extracted from reference
-# R=bright red  D=dark red  O=shadow  K=dark  G=grey  S=silver  T=scope teal  6=blue eyes
+# PERCEPTOR pixel grid
 # ================================================================
 _PC_GRID = [
     "11111RRO11111111111111111111111D11111111",
@@ -312,7 +318,7 @@ _PC_GRID = [
     "1111KKKR11OORRD11KKKKKKOR11RRRDDRRO1K111",
     "1111OTTOD1OOOO1111111111111RRRRRRR11K111",
     "1111OKGKR11O11111KTTTTT11111ODDOO1TT111D",
-    "111111TKD11111R111KT6TT61111111116K6T11D",
+    "111111TKD11111R111KT6TT61111111116K6T11D",  # row 21: mouth area
     "111111K1D11OODRD11KT6KK6111DDDODT6K6T11D",
     "111111K1O11DDDDRD11KT66T111ORRRRDT6611D1",
     "1111O111O11ODDDRRR11K111KKORRRRRRO111OR1",
@@ -340,15 +346,53 @@ _PC_COLORS = {
     "1": None, "R": "#CC2000", "D": "#8A1200", "O": "#500800",
     "K": "#201818", "G": "#504848", "S": "#908080", "T": "#405868", "6": "#1A88FF",
 }
+_PC_MOUTH_ROW  = 21
+_PC_MOUTH_COLS = range(6, 11)
+
+# ── Master character registry ──
+CHARS = {
+    "chat":     {"grid": _OP_GRID, "colors": _OP_COLORS, "visor": "6",
+                 "mouth_row": _OP_MOUTH_ROW, "mouth_cols": _OP_MOUTH_COLS,
+                 "mouth_open": _OP_MOUTH_OPEN_COLOR, "mouth_half": _OP_MOUTH_HALF_COLOR,
+                 "mouth_close": _OP_MOUTH_CLOSE_COLOR},
+    "browser":  {"grid": _BB_GRID, "colors": _BB_COLORS, "visor": "6",
+                 "mouth_row": _BB_MOUTH_ROW, "mouth_cols": _BB_MOUTH_COLS,
+                 "mouth_open": "#FFD000", "mouth_half": "#C08800", "mouth_close": "#7A5000"},
+    "code":     {"grid": _WJ_GRID, "colors": _WJ_COLORS, "visor": "6",
+                 "mouth_row": _WJ_MOUTH_ROW, "mouth_cols": _WJ_MOUTH_COLS,
+                 "mouth_open": "#D0D8D0", "mouth_half": "#707870", "mouth_close": "#505850"},
+    "memory":   {"grid": _PC_GRID, "colors": _PC_COLORS, "visor": "6",
+                 "mouth_row": _PC_MOUTH_ROW, "mouth_cols": _PC_MOUTH_COLS,
+                 "mouth_open": "#CC4040", "mouth_half": "#8A2020", "mouth_close": "#500808"},
+    "reminder": {"grid": _IH_GRID, "colors": _IH_COLORS, "visor": "6",
+                 "mouth_row": _IH_MOUTH_ROW, "mouth_cols": _IH_MOUTH_COLS,
+                 "mouth_open": "#909090", "mouth_half": "#585050", "mouth_close": "#282020"},
+}
 
 
-def _draw_char(canvas, grid, color_map, cx, cy, visor_key="6",
-               visor_color="#00CCFF", glow_color="#004466", pulse=0, ps=10):
-    """Generic pixel art draw — works for all characters."""
+def _draw_char_on_canvas(canvas, agent, cx, cy, ps,
+                         visor_color, glow_color, pulse,
+                         blink=False, mouth_frame=0):
+    """Draw a single character at (cx,cy) with given pixel size."""
+    char      = CHARS[agent]
+    grid      = char["grid"]
+    colors    = char["colors"]
+    visor_key = char["visor"]
+    mouth_row = char["mouth_row"]
+    mouth_col = char["mouth_cols"]
+
     COLS = len(grid[0])
     ROWS = len(grid)
     ox   = cx - (COLS * ps) // 2
     oy   = cy - (ROWS * ps) // 2
+
+    mouth_colors = [
+        char["mouth_close"],
+        char["mouth_half"],
+        char["mouth_open"],
+    ]
+    mouth_fill = mouth_colors[mouth_frame]
+
     for ri, row in enumerate(grid):
         for ci, cell in enumerate(row):
             if cell == "1":
@@ -357,105 +401,296 @@ def _draw_char(canvas, grid, color_map, cx, cy, visor_key="6",
             y0 = oy + ri * ps
             x1 = x0 + ps
             y1 = y0 + ps
+
+            # Mouth override
+            if ri == mouth_row and ci in mouth_col:
+                canvas.create_rectangle(x0, y0, x1, y1, fill=mouth_fill, outline="")
+                continue
+
+            # Visor / eye cells
             if cell == visor_key:
-                if pulse > 0:
-                    canvas.create_rectangle(x0-2, y0-2, x1+2, y1+2,
-                                            fill=glow_color, outline="")
-                fill = visor_color
+                if blink:
+                    # Replace eye with helmet color (dark)
+                    fill = colors.get("2") or "#081428"
+                else:
+                    if pulse > 0:
+                        canvas.create_rectangle(x0-1, y0-1, x1+1, y1+1,
+                                                fill=glow_color, outline="")
+                    fill = visor_color
             else:
-                fill = color_map.get(cell)
+                fill = colors.get(cell)
                 if fill is None:
                     continue
+
             canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline="")
 
 
-def draw_bumblebee(canvas, cx, cy, palette, pulse=0):
-    _draw_char(canvas, _BB_GRID, _BB_COLORS, cx, cy,
-               visor_color=palette["visor"], glow_color=palette["glow"], pulse=pulse)
+class TransformerHUD(tk.Tk):
+    """
+    Horizontal taskbar HUD — all 5 Transformers visible.
+    Active agent scales up + glows.  Others dim slightly.
+    Draggable, borderless, always-on-top.
+    """
 
-def draw_wheeljack(canvas, cx, cy, palette, pulse=0):
-    _draw_char(canvas, _WJ_GRID, _WJ_COLORS, cx, cy,
-               visor_color=palette["visor"], glow_color=palette["glow"], pulse=pulse)
+    def __init__(self):
+        super().__init__()
 
-def draw_ironhide(canvas, cx, cy, palette, pulse=0):
-    _draw_char(canvas, _IH_GRID, _IH_COLORS, cx, cy,
-               visor_color=palette["visor"], glow_color=palette["glow"], pulse=pulse)
+        # ── Window setup ──
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.attributes("-alpha", 0.0)
+        self.config(background="#000001")
+        self.attributes("-transparentcolor", "#000001")
 
-def draw_perceptor(canvas, cx, cy, palette, pulse=0):
-    _draw_char(canvas, _PC_GRID, _PC_COLORS, cx, cy,
-               visor_color=palette["visor"], glow_color=palette["glow"], pulse=pulse)
+        # ── State ──
+        self.active_agent  = "chat"
+        self.status_text   = "STANDBY"
+        self.current_lang  = "en"
 
+        # ── Animation state ──
+        self._pulse        = 0
+        self._pulse_grow   = True
+        self._mouth_frame  = 0
+        self._mouth_tick   = 0
 
-# Master draw dispatcher
-DRAW_FN = {
-    "chat":     draw_optimus,
-    "browser":  draw_bumblebee,
-    "code":     draw_wheeljack,
-    "memory":   draw_perceptor,
-    "reminder": draw_ironhide,
-}
+        # ── Scale animation per agent (float PS, target PS) ──
+        self._scales   = {a: float(PS_SMALL) for a in AGENT_ORDER}
+        self._scales["chat"] = float(PS_ACTIVE)  # Optimus starts active
 
-def draw_agent(agent: str, canvas, cx, cy, palette, pulse=0):
-    fn = DRAW_FN.get(agent, draw_optimus)
-    fn(canvas, cx, cy, palette, pulse)
+        # ── Blink state per agent ──
+        self._blink    = {a: False for a in AGENT_ORDER}
 
+        # ── Calculate strip width ──
+        # 4 small + 1 active + padding between 5 slots
+        self._strip_w  = (4 * CHAR_W_SMALL + CHAR_W_ACTIVE +
+                          5 * PADDING + PADDING)
+        self._strip_h  = STRIP_H
 
-class GifPlayer:
-    """Plays an animated GIF on a tkinter Canvas."""
+        # Position — center-bottom of screen
+        sw = self.winfo_screenwidth()
+        sh = self.winfo_screenheight()
+        x  = (sw - self._strip_w) // 2
+        y  = sh - self._strip_h - 40
+        self.geometry(f"{self._strip_w}x{self._strip_h}+{x}+{y}")
 
-    def __init__(self, canvas: tk.Canvas, cx: int, cy: int):
-        self.canvas   = canvas
-        self.cx       = cx
-        self.cy       = cy
-        self._frames  = []
-        self._delays  = []
-        self._idx     = 0
-        self._job     = None
-        self._img_id  = None
-        self._active  = False
+        # ── Canvas ──
+        self.canvas = tk.Canvas(self, width=self._strip_w, height=self._strip_h,
+                                bg="#000001", highlightthickness=0)
+        self.canvas.pack()
 
-    def load(self, gif_path: str):
-        self._frames = []
-        self._delays = []
+        # ── Drag ──
+        self.canvas.bind("<Button-1>",   self._drag_start)
+        self.canvas.bind("<B1-Motion>",  self._drag_move)
+
+        # ── Status label ──
+        self._status_var = tk.StringVar(value="STANDBY")
+        self._label      = tk.Label(self, textvariable=self._status_var,
+                                    fg="#ffffff", bg="#111111",
+                                    font=("Consolas", 10, "bold"))
+        self._label.place(x=0, y=self._strip_h - 22,
+                          width=self._strip_w, height=20)
+
+        # ── Start blink schedulers ──
+        for agent in AGENT_ORDER:
+            self._schedule_blink(agent)
+
+        # ── Fade in + animate ──
+        self._fade_in()
+        self._animate()
+
+    # ── Drag ───────────────────────────────────────────────────
+    def _drag_start(self, e):
+        self._dx, self._dy = e.x, e.y
+
+    def _drag_move(self, e):
+        nx = self.winfo_x() + e.x - self._dx
+        ny = self.winfo_y() + e.y - self._dy
+        self.geometry(f"+{nx}+{ny}")
+
+    # ── Fade in ─────────────────────────────────────────────────
+    def _fade_in(self):
+        a = self.attributes("-alpha")
+        if a < 1.0:
+            self.attributes("-alpha", min(a + 0.06, 1.0))
+            self.after(30, self._fade_in)
+
+    # ── Public API (called from main.py) ────────────────────────
+    def set_agent(self, agent: str):
+        """Switch active character."""
+        if agent not in AGENT_ORDER:
+            agent = "chat"
+        self.active_agent = agent
+
+    def set_status(self, status: str):
+        self.status_text = status
         try:
-            img = Image.open(gif_path)
-            for frame in range(img.n_frames):
-                img.seek(frame)
-                # Resize to fit nicely — 320x320
-                resized = img.copy().convert("RGBA").resize((320, 320), Image.NEAREST)
-                self._frames.append(ImageTk.PhotoImage(resized))
-                delay = img.info.get("duration", 80)
-                self._delays.append(max(delay, 40))
-        except Exception as e:
-            print(f"[HUD] GIF load failed: {e}")
+            self._status_var.set(status)
+        except Exception:
+            pass
 
-    def start(self):
-        if not self._frames:
-            return
-        self._active = True
-        self._idx    = 0
-        self._show_frame()
+    def set_language(self, lang: str):
+        self.current_lang = lang
 
-    def stop(self):
-        self._active = False
-        if self._job:
-            self.canvas.after_cancel(self._job)
-            self._job = None
-        if self._img_id:
-            self.canvas.delete(self._img_id)
-            self._img_id = None
+    # ── Blink scheduler ─────────────────────────────────────────
+    def _schedule_blink(self, agent: str):
+        cfg      = BLINK_CONFIG[agent]
+        interval = random.uniform(cfg["min"], cfg["max"])
+        ms       = int(interval * 1000)
+        self.after(ms, lambda: self._do_blink(agent))
 
-    def _show_frame(self):
-        if not self._active or not self._frames:
-            return
-        if self._img_id:
-            self.canvas.delete(self._img_id)
-        frame = self._frames[self._idx]
-        self._img_id = self.canvas.create_image(
-            self.cx, self.cy, image=frame, anchor="center"
-        )
-        # Keep reference to prevent GC
-        self.canvas._gif_frame = frame
-        self._idx = (self._idx + 1) % len(self._frames)
-        delay     = self._delays[self._idx]
-        self._job = self.canvas.after(delay, self._show_frame)
+    def _do_blink(self, agent: str):
+        cfg = BLINK_CONFIG[agent]
+        self._blink[agent] = True
+        dur_ms = int(cfg["dur"] * 1000)
+        self.after(dur_ms, lambda: self._end_blink(agent))
+
+    def _end_blink(self, agent: str):
+        self._blink[agent] = False
+        self._schedule_blink(agent)
+
+    # ── Palette helper ───────────────────────────────────────────
+    def _palette(self) -> dict:
+        key = self.status_text
+        if key not in HUD_PALETTES:
+            lang_map = {"en": "STANDBY_EN", "hi": "STANDBY_HI", "gu": "STANDBY_GU"}
+            key = lang_map.get(self.current_lang, "STANDBY_EN")
+        return HUD_PALETTES.get(key, HUD_PALETTES["STANDBY_EN"])
+
+    # ── Main animation loop (30 fps) ─────────────────────────────
+    def _animate(self):
+        # Pulse
+        step = 0.4
+        if self._pulse_grow:
+            self._pulse += step
+            if self._pulse > 10:
+                self._pulse_grow = False
+        else:
+            self._pulse -= step
+            if self._pulse < 0:
+                self._pulse_grow = True
+
+        # Mouth cycling (only during SPEAKING)
+        if self.status_text == "SPEAKING...":
+            self._mouth_tick += 1
+            if self._mouth_tick >= (MOUTH_FRAME_MS // 33):  # ~3 ticks per frame at 30fps
+                self._mouth_tick = 0
+                self._mouth_frame = (self._mouth_frame + 1) % 3
+        else:
+            self._mouth_frame = 0
+            self._mouth_tick  = 0
+
+        # Scale animation — smooth lerp toward target
+        for agent in AGENT_ORDER:
+            target = float(PS_ACTIVE) if agent == self.active_agent else float(PS_SMALL)
+            cur    = self._scales[agent]
+            diff   = target - cur
+            if abs(diff) > 0.1:
+                self._scales[agent] = cur + diff * 0.18
+            else:
+                self._scales[agent] = target
+
+        self._draw()
+        self.after(33, self._animate)  # ~30 fps
+
+    # ── Draw all characters ──────────────────────────────────────
+    def _draw(self):
+        self.canvas.delete("all")
+        palette   = self._palette()
+        pulse     = int(self._pulse)
+        is_speak  = self.status_text == "SPEAKING..."
+
+        # Calculate X positions for each slot
+        # Active slot gets CHAR_W_ACTIVE, others get CHAR_W_SMALL
+        x = PADDING
+        positions = {}
+        for agent in AGENT_ORDER:
+            ps      = int(round(self._scales[agent]))
+            w       = len(CHARS[agent]["grid"][0]) * ps
+            positions[agent] = (x, ps, w)
+            x += w + PADDING
+
+        # Draw each character
+        for agent in AGENT_ORDER:
+            slot_x, ps, w = positions[agent]
+            is_active = (agent == self.active_agent)
+            rows = len(CHARS[agent]["grid"])
+            h    = rows * ps
+
+            # Center vertically in strip (leave room for label at bottom)
+            cy   = (self._strip_h - 24) // 2
+            cx   = slot_x + w // 2
+
+            # Glow background for active character
+            if is_active and pulse > 2:
+                gpad = 8
+                self.canvas.create_oval(
+                    cx - w//2 - gpad, cy - h//2 - gpad,
+                    cx + w//2 + gpad, cy + h//2 + gpad,
+                    fill=palette["glow"], outline=""
+                )
+
+            # Dim inactive characters slightly
+            vc = palette["visor"] if is_active else self._dim_color(palette["visor"])
+            gc = palette["glow"]  if is_active else "#111111"
+
+            _draw_char_on_canvas(
+                canvas      = self.canvas,
+                agent       = agent,
+                cx          = cx,
+                cy          = cy,
+                ps          = ps,
+                visor_color = vc,
+                glow_color  = gc,
+                pulse       = pulse if is_active else 0,
+                blink       = self._blink[agent],
+                mouth_frame = self._mouth_frame if (is_active and is_speak) else 0,
+            )
+
+            # Name tag under active character
+            if is_active:
+                names = {
+                    "chat": "OPTIMUS", "browser": "BUMBLEBEE",
+                    "code": "WHEELJACK", "memory": "PERCEPTOR",
+                    "reminder": "IRONHIDE",
+                }
+                self.canvas.create_text(
+                    cx, cy + h//2 + 8,
+                    text=names[agent],
+                    fill=palette["primary"],
+                    font=("Consolas", 8, "bold"),
+                    anchor="n"
+                )
+
+    @staticmethod
+    def _dim_color(hex_color: str) -> str:
+        """Darken a hex color to ~35% brightness for inactive characters."""
+        try:
+            r = int(hex_color[1:3], 16)
+            g = int(hex_color[3:5], 16)
+            b = int(hex_color[5:7], 16)
+            r = int(r * 0.35)
+            g = int(g * 0.35)
+            b = int(b * 0.35)
+            return f"#{r:02x}{g:02x}{b:02x}"
+        except Exception:
+            return "#333333"
+
+
+# ── Legacy compatibility shim ─────────────────────────────────────
+# main.py may call draw_agent() directly; keep it working.
+
+def draw_agent(agent: str, canvas, cx: int, cy: int,
+               palette: dict, pulse: int = 0):
+    """Compatibility shim — draw a character at given position."""
+    _draw_char_on_canvas(
+        canvas      = canvas,
+        agent       = agent,
+        cx          = cx,
+        cy          = cy,
+        ps          = PS_ACTIVE,
+        visor_color = palette.get("visor", "#00ccff"),
+        glow_color  = palette.get("glow",  "#004466"),
+        pulse       = pulse,
+        blink       = False,
+        mouth_frame = 0,
+    )
