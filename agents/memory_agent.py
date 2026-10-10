@@ -17,6 +17,11 @@ os.makedirs(LLAMAINDEX_DIR, exist_ok=True)
 CHARACTER = "perceptor"
 VOICE     = "en-GB-RyanNeural"   # slower, thoughtful tone
 
+# Set OPTIMUS_LOW_MEMORY=1 to skip torch/sentence-transformers/chromadb/
+# llama-index entirely — raw exchanges still get logged to conversation_log.jsonl,
+# but nothing gets embedded, so recall() returns nothing for the session.
+LOW_MEMORY = os.getenv("OPTIMUS_LOW_MEMORY", "0").strip().lower() in ("1", "true", "yes")
+
 
 class MemoryAgent:
     def __init__(self):
@@ -24,23 +29,9 @@ class MemoryAgent:
         self._chroma_client = None
         self._chroma_col    = None
         self._llama_index   = None
-        self._embedder_ready = False
         self._embed_lock     = threading.Lock()
         self._wire_tools()
         print("[Perceptor] Memory agent ready.")
-        # Pre-warm embedder in background so first command never blocks
-        threading.Thread(target=self._prewarm, daemon=True).start()
-
-    def _prewarm(self):
-        try:
-            from sentence_transformers import SentenceTransformer
-            with self._embed_lock:
-                self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-                self._embedder_ready = True
-            _ = self.chroma
-            print("[Perceptor] Embedder and ChromaDB ready.")
-        except Exception as e:
-            print(f"[Perceptor] Pre-warm error: {e}")
 
     # ── Lazy loaders ──
     @property
@@ -49,7 +40,6 @@ class MemoryAgent:
             if self._embedder is None:
                 from sentence_transformers import SentenceTransformer
                 self._embedder = SentenceTransformer("all-MiniLM-L6-v2")
-                self._embedder_ready = True
             return self._embedder
 
     @property
@@ -96,8 +86,9 @@ class MemoryAgent:
                          daemon=True).start()
 
     def _embed(self, user_text, bot_text, category, timestamp):
-        # Skip embedding silently if model not ready yet — raw log already saved
-        if not self._embedder_ready:
+        # Runs on a background thread, so a cold-start model load here
+        # doesn't block speech/UI.
+        if LOW_MEMORY:
             return
         from llama_index.core import Document
         chunk = f"User: {user_text}\nOptimus: {bot_text}"
@@ -118,7 +109,7 @@ class MemoryAgent:
 
     # ── Recall ──
     def recall(self, query: str, category: str = "general", top_k: int = 4) -> str:
-        if not self._embedder_ready:
+        if LOW_MEMORY:
             return ""
         try:
             if category in ("code", "post"):
@@ -139,6 +130,8 @@ class MemoryAgent:
             return ""
 
     def stats(self) -> str:
+        if LOW_MEMORY:
+            return "Running in low-memory mode — vector recall is disabled."
         try:
             c = self.chroma.count()
             l = len(self.llama.docstore.docs)
