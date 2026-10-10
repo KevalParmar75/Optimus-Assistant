@@ -1,14 +1,17 @@
 """
-Reminder Agent — Ironhide
+Reminder Agent -- Ironhide
 Blunt, military, no nonsense.
 APScheduler + win10toast + TTS.
+
+Laya Integration:
+- Time parsing is now 100% local (regex patterns + Laya structured decide)
+- Zero LLM API calls needed for any reminder operation
 """
 import re, json, datetime
 from state import AgentState
 
 CHARACTER = "ironhide"
 VOICE     = "en-US-GuyNeural"    # gruff, direct
-MODEL     = "Qwen/Qwen2.5-72B-Instruct"
 
 
 class ReminderAgent:
@@ -19,7 +22,7 @@ class ReminderAgent:
         self._speak_fn  = None
         self._ui_ref    = None
         self._reminders = []
-        self._client    = None
+        self._laya      = None
         self._wire_tools()
         print("[Ironhide] Reminder agent online.")
 
@@ -27,38 +30,146 @@ class ReminderAgent:
         self._speak_fn = fn
         self._ui_ref   = ui_ref
 
-    def _get_client(self):
-        if self._client is None:
-            import os
-            from huggingface_hub import InferenceClient
-            self._client = InferenceClient(token=os.getenv("HF_TOKEN"))
-        return self._client
+    def _get_laya(self):
+        if self._laya is None:
+            from tools.laya_engine import LayaEngine
+            self._laya = LayaEngine.get_instance()
+        return self._laya
 
     def _wire_tools(self):
         from tools.registry import REGISTRY
         REGISTRY["set_reminder"]   = self._set_reminder_tool
         REGISTRY["list_reminders"] = self._list_reminders_tool
 
-    def parse_time(self, command: str) -> dict | None:
-        prompt = f"""Extract reminder details from: "{command}"
-Current time: {datetime.datetime.now().strftime('%H:%M')}
+    # ================================================================
+    # LOCAL TIME PARSING (regex first, Laya fallback -- zero LLM API)
+    # ================================================================
 
-Respond ONLY with JSON (no markdown):
-{{"reminder_text": "what to remind", "remind_at": "HH:MM"}}
-If no time found, set remind_at to null."""
+    def parse_time(self, command: str) -> dict | None:
+        """
+        Extract reminder time + text from natural language, fully local.
+
+        Strategy:
+          1. Regex patterns for common English time expressions
+          2. Laya structured decide() as fallback
+          3. Never calls a remote LLM API
+        """
+        cmd = command.lower().strip()
+        now = datetime.datetime.now()
+
+        # ── Pattern 1: "in X minutes/hours" ──
+        m = re.search(r'in\s+(\d+)\s*(min(?:ute)?s?|hour?s?|hr?s?)', cmd)
+        if m:
+            amount = int(m.group(1))
+            unit   = m.group(2)
+            if unit.startswith('h'):
+                fire = now + datetime.timedelta(hours=amount)
+            else:
+                fire = now + datetime.timedelta(minutes=amount)
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": fire.strftime("%H:%M")}
+
+        # ── Pattern 2: "in half an hour" / "in an hour" ──
+        if re.search(r'in\s+(half\s+an?\s+hour|30\s+min)', cmd):
+            fire = now + datetime.timedelta(minutes=30)
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": fire.strftime("%H:%M")}
+        if re.search(r'in\s+an?\s+hour', cmd):
+            fire = now + datetime.timedelta(hours=1)
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": fire.strftime("%H:%M")}
+
+        # ── Pattern 3: "at HH:MM" or "at H:MM" ──
+        m = re.search(r'at\s+(\d{1,2}):(\d{2})\s*(am|pm|a\.m\.|p\.m\.)?', cmd)
+        if m:
+            h, mi = int(m.group(1)), int(m.group(2))
+            ampm = (m.group(3) or "").replace(".", "")
+            if ampm == "pm" and h < 12:
+                h += 12
+            elif ampm == "am" and h == 12:
+                h = 0
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": f"{h:02d}:{mi:02d}"}
+
+        # ── Pattern 4: "at 3 pm" / "at 10 am" (no colon) ──
+        m = re.search(r'at\s+(\d{1,2})\s*(am|pm|a\.m\.|p\.m\.)', cmd)
+        if m:
+            h = int(m.group(1))
+            ampm = m.group(2).replace(".", "")
+            if ampm == "pm" and h < 12:
+                h += 12
+            elif ampm == "am" and h == 12:
+                h = 0
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": f"{h:02d}:00"}
+
+        # ── Pattern 5: bare "HH:MM" anywhere ──
+        m = re.search(r'(\d{1,2}):(\d{2})', cmd)
+        if m:
+            h, mi = int(m.group(1)), int(m.group(2))
+            if 0 <= h <= 23 and 0 <= mi <= 59:
+                text = self._extract_reminder_text(cmd)
+                return {"reminder_text": text, "remind_at": f"{h:02d}:{mi:02d}"}
+
+        # ── Pattern 6: "after X minutes" ──
+        m = re.search(r'after\s+(\d+)\s*(min(?:ute)?s?|hour?s?|hr?s?)', cmd)
+        if m:
+            amount = int(m.group(1))
+            unit   = m.group(2)
+            if unit.startswith('h'):
+                fire = now + datetime.timedelta(hours=amount)
+            else:
+                fire = now + datetime.timedelta(minutes=amount)
+            text = self._extract_reminder_text(cmd)
+            return {"reminder_text": text, "remind_at": fire.strftime("%H:%M")}
+
+        # ── Laya fallback: structured question extraction ──
         try:
-            client = self._get_client()
-            resp   = client.chat_completion(
-                model=MODEL,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=80, temperature=0.1
-            )
-            raw = resp.choices[0].message.content.strip()
-            raw = re.sub(r"```json|```", "", raw).strip()
-            return json.loads(raw)
+            laya = self._get_laya()
+            questions = {
+                "has_time": {
+                    "instructions": "Does this reminder request contain a specific time?",
+                    "type": "choice",
+                    "criteria": ["yes", "no"]
+                },
+                "time_type": {
+                    "instructions": "What type of time specification is used?",
+                    "type": "choice",
+                    "criteria": ["relative_minutes", "relative_hours", "absolute_clock", "none"]
+                }
+            }
+            res = laya.agent.decide(cmd, questions=questions)
+            has_time = res.get("has_time", {}).get("choice", "no")
+            if has_time == "no":
+                print("[Ironhide] Laya says no time found in command")
+                return None
+            print(f"[Ironhide] Laya detected time but regex missed it: {res}")
         except Exception as e:
-            print(f"[Ironhide] Parse error: {e}")
-            return None
+            print(f"[Ironhide] Laya fallback failed: {e}")
+
+        return None
+
+    def _extract_reminder_text(self, cmd: str) -> str:
+        """Strip time phrases and common prefixes to get the reminder content."""
+        text = cmd
+        # Remove common prefixes
+        for prefix in ["remind me to ", "remind me ", "set a reminder to ",
+                       "set reminder to ", "set a reminder for ",
+                       "set reminder for ", "reminder to ", "reminder for ",
+                       "alert me to ", "notify me to ",
+                       "don't let me forget to ", "don't forget to "]:
+            if text.startswith(prefix):
+                text = text[len(prefix):]
+                break
+
+        # Remove time expressions
+        text = re.sub(r'\s*(?:at\s+\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)?)', '', text)
+        text = re.sub(r'\s*(?:in\s+(?:\d+\s*(?:min(?:ute)?s?|hour?s?|hr?s?)|half\s+an?\s+hour|an?\s+hour))', '', text)
+        text = re.sub(r'\s*(?:after\s+\d+\s*(?:min(?:ute)?s?|hour?s?|hr?s?))', '', text)
+        text = text.strip(" .,;")
+        return text if text else cmd
+
+    # ================================================================
 
     def add(self, text: str, remind_at: str) -> str:
         try:
@@ -96,7 +207,7 @@ If no time found, set remind_at to null."""
         if not self._reminders:
             return "No reminders set."
         return "Reminders: " + ". ".join(
-            [f"{r['time']} — {r['text']}" for r in self._reminders]
+            [f"{r['time']} -- {r['text']}" for r in self._reminders]
         )
 
     # ── LangGraph node ──
@@ -120,7 +231,7 @@ If no time found, set remind_at to null."""
                             "active_agent": "reminder"}
             response = self.add(text, remind_at)
         else:
-            # Fallback — parse from raw command
+            # Fallback -- parse from raw command
             parsed = self.parse_time(state["command"])
             if parsed and parsed.get("remind_at"):
                 response = self.add(parsed.get("reminder_text", state["command"]),
