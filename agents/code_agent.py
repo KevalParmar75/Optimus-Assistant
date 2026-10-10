@@ -25,14 +25,13 @@ class CodeAgent:
 
     def _ask(self, messages: list, max_tokens: int = 1024) -> str:
         try:
-            resp = self._get_client().chat_completion(
-                model=MODEL, messages=messages,
-                max_tokens=max_tokens, temperature=0.2
-            )
-            return resp.choices[0].message.content.strip()
+            from tools.llm import chat_complete
+            resp = chat_complete(messages, max_tokens=max_tokens, temperature=0.2)
+            if resp:
+                return resp
         except Exception as e:
             print(f"[Wheeljack] LLM error: {e}")
-            return "Hit a snag. Try again."
+        return "Hit a snag. Try again."
 
     def generate(self, command: str, language: str = "en",
                  memory_context: str = "") -> str:
