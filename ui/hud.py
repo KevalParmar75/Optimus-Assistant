@@ -7,10 +7,6 @@ import tkinter as tk
 import random
 import time
 import threading
-from pathlib import Path
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-ASSETS_DIR = BASE_DIR / "assets"
 
 # ── HUD state palettes ──
 HUD_PALETTES = {
@@ -31,20 +27,24 @@ HUD_PALETTES = {
 AGENT_ORDER = ["chat", "browser", "code", "memory", "reminder"]
 
 # ── Pixel sizes ──
-PS_SMALL  = 5    # inactive characters
-PS_ACTIVE = 10   # active character
+PS_SMALL  = 2    # inactive characters  (taskbar-icon sized)
+PS_ACTIVE = 4    # active character     (slightly bigger, still compact)
 
-# ── Strip dimensions (calculated dynamically) ──
+# ── Strip dimensions ──
 STRIP_COLS = 40  # all grids are 40 wide
-STRIP_ROWS = 44  # max grid height
+STRIP_ROWS = 49  # max grid height (Bumblebee/Perceptor have 44 rows)
 
-CHAR_W_SMALL  = STRIP_COLS * PS_SMALL   # 200
-CHAR_H_SMALL  = STRIP_ROWS * PS_SMALL   # 220
-CHAR_W_ACTIVE = STRIP_COLS * PS_ACTIVE  # 400
-CHAR_H_ACTIVE = STRIP_ROWS * PS_ACTIVE  # 440
+CHAR_W_SMALL  = STRIP_COLS * PS_SMALL    # 80
+CHAR_H_SMALL  = STRIP_ROWS * PS_SMALL    # 98
+CHAR_W_ACTIVE = STRIP_COLS * PS_ACTIVE   # 160
+CHAR_H_ACTIVE = STRIP_ROWS * PS_ACTIVE   # 196
 
-PADDING       = 12   # between characters
-STRIP_H       = CHAR_H_ACTIVE + 40   # total strip height
+PADDING       = 8    # between characters
+STRIP_H       = CHAR_H_ACTIVE + 28      # total strip height (~224px)
+
+# ── Dark pill behind each character (so dark chars like Ironhide are visible) ──
+PILL_COLOR    = "#1a1a1a"
+PILL_RADIUS   = 6
 
 # ── Blink config per character ──
 BLINK_CONFIG = {
@@ -314,7 +314,7 @@ _PC_GRID = [
     "1111111ODORRRRRRRRRRRRRRO1DRDRDDDRDDRRD1",
     "111111K11DORRRRRRRRRRRRRD1ORDDRRDRODRRR1",
     "111111111DODRRRRRRRRRRRRD1ORRRRRRR1DRRR1",
-    "111KKKD111OORRRRDDDDDRRRR11RDDRRDRODRDD1",
+    "11KKKD111OORRRRDDDDDRRRR11RDDRRDRODRDD1",
     "1111KKKR11OORRD11KKKKKKOR11RRRDDRRO1K111",
     "1111OTTOD1OOOO1111111111111RRRRRRR11K111",
     "1111OKGKR11O11111KTTTTT11111ODDOO1TT111D",
@@ -439,8 +439,7 @@ class TransformerHUD(tk.Tk):
         self.overrideredirect(True)
         self.attributes("-topmost", True)
         self.attributes("-alpha", 0.0)
-        self.config(background="#000001")
-        self.attributes("-transparentcolor", "#000001")
+        self.config(background="#0d0d0d")
 
         # ── State ──
         self.active_agent  = "chat"
@@ -461,9 +460,9 @@ class TransformerHUD(tk.Tk):
         self._blink    = {a: False for a in AGENT_ORDER}
 
         # ── Calculate strip width ──
-        # 4 small + 1 active + padding between 5 slots
+        # 4 small + 1 active + padding between 5 slots + outer padding
         self._strip_w  = (4 * CHAR_W_SMALL + CHAR_W_ACTIVE +
-                          5 * PADDING + PADDING)
+                          6 * PADDING)
         self._strip_h  = STRIP_H
 
         # Position — center-bottom of screen
@@ -473,9 +472,9 @@ class TransformerHUD(tk.Tk):
         y  = sh - self._strip_h - 40
         self.geometry(f"{self._strip_w}x{self._strip_h}+{x}+{y}")
 
-        # ── Canvas ──
+        # ── Canvas — solid dark bg, no transparent color trick ──
         self.canvas = tk.Canvas(self, width=self._strip_w, height=self._strip_h,
-                                bg="#000001", highlightthickness=0)
+                                bg="#0d0d0d", highlightthickness=0)
         self.canvas.pack()
 
         # ── Drag ──
@@ -485,8 +484,8 @@ class TransformerHUD(tk.Tk):
         # ── Status label ──
         self._status_var = tk.StringVar(value="STANDBY")
         self._label      = tk.Label(self, textvariable=self._status_var,
-                                    fg="#ffffff", bg="#111111",
-                                    font=("Consolas", 10, "bold"))
+                                    fg="#aaaaaa", bg="#0d0d0d",
+                                    font=("Consolas", 8, "bold"))
         self._label.place(x=0, y=self._strip_h - 22,
                           width=self._strip_w, height=20)
 
@@ -570,7 +569,7 @@ class TransformerHUD(tk.Tk):
                 self._pulse_grow = True
 
         # Mouth cycling (only during SPEAKING)
-        if self.status_text == "SPEAKING...":
+        if self.status_text == "SPEAKING":
             self._mouth_tick += 1
             if self._mouth_tick >= (MOUTH_FRAME_MS // 33):  # ~3 ticks per frame at 30fps
                 self._mouth_tick = 0
@@ -597,7 +596,7 @@ class TransformerHUD(tk.Tk):
         self.canvas.delete("all")
         palette   = self._palette()
         pulse     = int(self._pulse)
-        is_speak  = self.status_text == "SPEAKING..."
+        is_speak  = self.status_text == "SPEAKING"
 
         # Calculate X positions for each slot
         # Active slot gets CHAR_W_ACTIVE, others get CHAR_W_SMALL
@@ -617,17 +616,31 @@ class TransformerHUD(tk.Tk):
             h    = rows * ps
 
             # Center vertically in strip (leave room for label at bottom)
-            cy   = (self._strip_h - 24) // 2
+            cy   = (self._strip_h - 20) // 2
             cx   = slot_x + w // 2
 
-            # Glow background for active character
+            pill_pad = 5
+            px0 = cx - w // 2 - pill_pad
+            py0 = cy - h // 2 - pill_pad
+            px1 = cx + w // 2 + pill_pad
+            py1 = cy + h // 2 + pill_pad
+
+            # Glow oval behind active character (drawn first, under pill)
             if is_active and pulse > 2:
-                gpad = 8
+                gpad = 10
                 self.canvas.create_oval(
-                    cx - w//2 - gpad, cy - h//2 - gpad,
-                    cx + w//2 + gpad, cy + h//2 + gpad,
+                    px0 - gpad, py0 - gpad,
+                    px1 + gpad, py1 + gpad,
                     fill=palette["glow"], outline=""
                 )
+
+            # Dark pill behind every character (fixes Ironhide visibility)
+            self.canvas.create_rectangle(
+                px0, py0, px1, py1,
+                fill=PILL_COLOR,
+                outline=palette["primary"] if is_active else "#333333",
+                width=1
+            )
 
             # Dim inactive characters slightly
             vc = palette["visor"] if is_active else self._dim_color(palette["visor"])
@@ -646,7 +659,7 @@ class TransformerHUD(tk.Tk):
                 mouth_frame = self._mouth_frame if (is_active and is_speak) else 0,
             )
 
-            # Name tag under active character
+            # Name tag under active character only
             if is_active:
                 names = {
                     "chat": "OPTIMUS", "browser": "BUMBLEBEE",
@@ -654,10 +667,10 @@ class TransformerHUD(tk.Tk):
                     "reminder": "IRONHIDE",
                 }
                 self.canvas.create_text(
-                    cx, cy + h//2 + 8,
+                    cx, py1 + 3,
                     text=names[agent],
                     fill=palette["primary"],
-                    font=("Consolas", 8, "bold"),
+                    font=("Consolas", 7, "bold"),
                     anchor="n"
                 )
 
