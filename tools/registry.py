@@ -9,7 +9,7 @@ import os
 from AppOpener import open as appopen
 
 # ── Registry store ──
-REGISTRY   = {}   # name → function
+REGISTRY   = {}   # name -> function
 TOOL_SPECS = []   # list of {name, description, parameters} for LLM
 
 def tool(name: str, description: str, parameters: dict):
@@ -50,7 +50,11 @@ def web_search(query: str) -> str:
 )
 def open_url(url: str) -> str:
     webbrowser.open(url)
-    return f"Opened {url}."
+    try:
+        from agents.browser_agent import friendly_url_name
+        return f"Opened {friendly_url_name(url)}."
+    except Exception:
+        return "Opened page."
 
 
 # ================================================================
@@ -129,7 +133,7 @@ def open_app(name: str) -> str:
         if key in n:
             webbrowser.open(url)
             return f"Opened {key}."
-    # App map → AppOpener exact match
+    # App map -> AppOpener exact match
     for keyword, exact in APP_NAME_MAP.items():
         if keyword in n:
             try:
