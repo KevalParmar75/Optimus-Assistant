@@ -1,4 +1,7 @@
 .env
 optimus_memory.pkl
 temp_voice.mp3
+optimus_*.mp3
 memory
+__pycache__/
+*.pyc
