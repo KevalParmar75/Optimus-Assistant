@@ -1002,23 +1002,17 @@ class OptimusApp(TransformerHUD):  # <-- NOW INHERITS FROM THE NEW HUD
         lang_map = {"en": "English", "hi": "Hindi", "gu": "Gujarati"}
         lang     = lang_map.get(state["language"], "English")
 
-        # Parse contact and message using LLM
-        from huggingface_hub import InferenceClient
+        # Parse contact and message using unified Groq LLM client
+        from tools.llm import chat_complete
         import re as _re, json as _json
-        client = InferenceClient(token=os.getenv("HF_TOKEN"))
         try:
-            parse_resp = client.chat_completion(
-                model="Qwen/Qwen2.5-72B-Instruct",
-                messages=[{
-                    "role": "user",
-                    "content": f"""Extract the contact name and message from this command: "{command}"
+            raw_content = chat_complete([{
+                "role": "user",
+                "content": f"""Extract the contact name and message from this command: "{command}"
 Respond ONLY with JSON:
 {{"contact": "name", "message": "message text"}}"""
-                }],
-                max_tokens=100, temperature=0.1
-            )
-            raw     = _re.sub(r"```json|```", "",
-                              parse_resp.choices[0].message.content.strip()).strip()
+            }], max_tokens=100, temperature=0.1)
+            raw     = _re.sub(r"```json|```", "", raw_content.strip()).strip()
             parsed  = _json.loads(raw)
             contact = parsed.get("contact", "")
             message = parsed.get("message", "")
