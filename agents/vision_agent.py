@@ -1,20 +1,19 @@
 """
 Vision Agent -- Optimus's Eyes
-Uses Qwen2-VL to see the screen and interact with it.
+Powered by Groq multimodal vision (qwen/qwen3.8-27b) and local Laya triage.
 Screenshots are in-memory only -- never written to disk.
 
 Laya Integration:
 - Laya triage classifies commands BEFORE expensive VL API calls
 - Direct actions (scroll, key press, hotkey) bypass VL entirely (~0ms)
-- Only visually-grounded actions (click, find, describe) use VL API
+- Only visually-grounded actions (click, find, describe) use Groq VL API
 """
 import os, base64, io, time, json, re
 import pyautogui
 from state import AgentState
 
 CHARACTER  = "vision"
-# ── Use an actual vision-language model ──
-VL_MODEL   = "google/gemma-4-31B-it"
+VL_MODEL   = "qwen/qwen3.8-27b"
 
 pyautogui.FAILSAFE = False
 
@@ -24,15 +23,8 @@ SCREEN_H = 1080
 
 class VisionAgent:
     def __init__(self):
-        self._client = None
-        self._laya   = None
+        self._laya = None
         print("[Vision] Vision agent ready.")
-
-    def _get_client(self):
-        if self._client is None:
-            from huggingface_hub import InferenceClient
-            self._client = InferenceClient(token=os.getenv("HF_TOKEN"))
-        return self._client
 
     def _get_laya(self):
         if self._laya is None:
@@ -61,7 +53,7 @@ class VisionAgent:
             img_resized = img.resize((1280, 720), Image.LANCZOS)
 
             buf = io.BytesIO()
-            img_resized.save(buf, format="PNG")
+            img_resized.save(buf, format="JPEG", quality=85)
             b64 = base64.b64encode(buf.getvalue()).decode()
             return b64
         except Exception as e:
@@ -179,29 +171,10 @@ class VisionAgent:
     # ================================================================
 
     def ask_vl(self, b64_image: str, prompt: str) -> str:
-        """Send screenshot + prompt to VL model, return raw response."""
+        """Send screenshot + prompt to Groq VL model, return raw response."""
         try:
-            resp = self._get_client().chat_completion(
-                model=VL_MODEL,
-                messages=[{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{b64_image}"
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": prompt
-                        }
-                    ]
-                }],
-                max_tokens=400,
-                temperature=0.1
-            )
-            return resp.choices[0].message.content.strip()
+            from tools.llm import vision_complete
+            return vision_complete(b64_image, prompt, max_tokens=400, temperature=0.1)
         except Exception as e:
             print(f"[Vision] VL API failed: {e}")
             return ""
