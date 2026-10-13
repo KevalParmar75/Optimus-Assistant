@@ -1,7 +1,6 @@
 """
 Unified LLM Client for Optimus V3.
-Prioritizes ultra-fast Groq (Llama-3.3-70b-versatile) when GROQ_API_KEY is present,
-with graceful fallback to HuggingFace InferenceClient.
+Powered by high-speed Groq API (qwen/qwen3.8-27b) for text, code, and multimodal vision inference.
 """
 import os
 from dotenv import load_dotenv
@@ -9,51 +8,103 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _groq_client = None
-_hf_client = None
+PRIMARY_MODEL = "qwen/qwen3.8-27b"
+FALLBACK_TEXT_MODEL = "openai/gpt-oss-120b"
+
+
+def _get_client():
+    global _groq_client
+    if _groq_client is None:
+        groq_key = os.getenv("GROQ_API_KEY")
+        if groq_key and groq_key.strip():
+            from groq import Groq
+            _groq_client = Groq(api_key=groq_key.strip())
+    return _groq_client
 
 
 def chat_complete(messages: list, max_tokens: int = 512, temperature: float = 0.5) -> str:
     """
-    Sends a chat completion request to Groq (primary) or HuggingFace (fallback).
+    Sends a chat completion request to the high-speed Groq API.
     """
-    global _groq_client, _hf_client
+    client = _get_client()
+    if not client:
+        print("[LLM] GROQ_API_KEY is missing or invalid.")
+        return ""
 
-    # 1. Groq (300+ tokens/sec, state-of-the-art)
-    groq_key = os.getenv("GROQ_API_KEY")
-    if groq_key and groq_key.strip():
-        try:
-            if _groq_client is None:
-                from groq import Groq
-                _groq_client = Groq(api_key=groq_key.strip())
-            resp = _groq_client.chat.completions.create(
-                model="qwen/qwen3.8-27b",
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            content = resp.choices[0].message.content
-            if content:
-                return content.strip()
-        except Exception as ge:
-            print(f"[LLM] Groq call failed ({ge}), trying fallback...")
+    # Primary model attempt
+    try:
+        resp = client.chat.completions.create(
+            model=PRIMARY_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        content = resp.choices[0].message.content
+        if content:
+            return content.strip()
+    except Exception as ge:
+        print(f"[LLM] Primary model ({PRIMARY_MODEL}) failed: {ge}, trying secondary...")
 
-    # 2. Hugging Face fallback
-    hf_token = os.getenv("HF_TOKEN")
-    if hf_token and hf_token.strip():
-        try:
-            if _hf_client is None:
-                from huggingface_hub import InferenceClient
-                _hf_client = InferenceClient(token=hf_token.strip())
-            resp = _hf_client.chat_completion(
-                model="Qwen/Qwen2.5-72B-Instruct",
-                messages=messages,
-                max_tokens=max_tokens,
-                temperature=temperature
-            )
-            content = resp.choices[0].message.content
-            if content:
-                return content.strip()
-        except Exception as he:
-            print(f"[LLM] HuggingFace call failed ({he})")
+    # Secondary text model attempt
+    try:
+        resp = client.chat.completions.create(
+            model=FALLBACK_TEXT_MODEL,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        content = resp.choices[0].message.content
+        if content:
+            return content.strip()
+    except Exception as fe:
+        print(f"[LLM] Secondary model ({FALLBACK_TEXT_MODEL}) failed: {fe}")
+
+    return ""
+
+
+def vision_complete(b64_image: str, prompt: str, max_tokens: int = 400, temperature: float = 0.1) -> str:
+    """
+    Sends a multimodal vision-language request (image + prompt) to Groq.
+    """
+    client = _get_client()
+    if not client:
+        print("[LLM] GROQ_API_KEY is missing or invalid for vision.")
+        return ""
+
+    if not b64_image:
+        return ""
+
+    # Format data URI if not already prefixed
+    if b64_image.startswith("data:"):
+        image_url = b64_image
+    else:
+        image_url = f"data:image/jpeg;base64,{b64_image}"
+
+    try:
+        resp = client.chat.completions.create(
+            model=PRIMARY_MODEL,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": image_url
+                        }
+                    },
+                    {
+                        "type": "text",
+                        "text": prompt
+                    }
+                ]
+            }],
+            max_tokens=max_tokens,
+            temperature=temperature
+        )
+        content = resp.choices[0].message.content
+        if content:
+            return content.strip()
+    except Exception as ve:
+        print(f"[LLM] Vision completion failed: {ve}")
 
     return ""
