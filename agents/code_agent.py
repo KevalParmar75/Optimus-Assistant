@@ -9,19 +9,12 @@ from tools.registry import call_tool
 
 CHARACTER = "wheeljack"
 VOICE     = "en-GB-ThomasNeural"   # technical, precise
-MODEL     = "Qwen/Qwen2.5-Coder-32B-Instruct"
+MODEL     = "qwen/qwen3.8-27b"
 
 
 class CodeAgent:
     def __init__(self):
-        self._client = None
         print("[Wheeljack] Code agent online.")
-
-    def _get_client(self):
-        if self._client is None:
-            from huggingface_hub import InferenceClient
-            self._client = InferenceClient(token=os.getenv("HF_TOKEN"))
-        return self._client
 
     def _ask(self, messages: list, max_tokens: int = 1024) -> str:
         try:
