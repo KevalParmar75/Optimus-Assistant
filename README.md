@@ -5,23 +5,56 @@ A modular, voice and text-controlled multi-agent desktop assistant built around 
 
 ---
 
-## ⚡ The Laya Engine & Performance Benchmarks
+## ⚡ The Laya Engine & Live Benchmark Metrics
 
-Optimus integrates **Laya** (`convaiinnovations/laya`), a state-of-the-art non-autoregressive decision model running **100% locally on-device**. By utilizing ModernBERT architecture for intent routing and tactical action planning, Optimus bypasses slow cloud LLM roundtrips for all operational decisions. 
+Optimus uses **Laya** (`convaiinnovations/laya`), a state-of-the-art non-autoregressive decision model running **100% locally on-device**. By utilizing ModernBERT architecture for intent routing and tactical action planning, Optimus eliminates slow cloud LLM roundtrips for all operational decisions.
 
-External LLMs (via high-speed **Groq Cloud API** or Hugging Face) are called **only** when deep, open-ended conversational generation is strictly needed.
+External LLMs (via high-speed **Groq Cloud API**) are called **only** when deep, open-ended conversational generation is strictly needed.
 
-### 📊 Latency & Speed Comparison Metrics
+### 📊 Measured Benchmark Results (Verified on Windows / Python 3.12)
 
-| Workflow Component | Legacy Architecture (Remote Cloud LLM) | Laya + Hybrid Architecture (Local Laya + Groq) | Speedup Factor |
-| :--- | :--- | :--- | :--- |
-| **Supervisor Intent Routing** | ~2,200 ms *(HF API roundtrip)* | **~35 ms** *(Local Laya Engine)* | ⚡ **~63x Faster** |
-| **Browser Action Triage** | ~3,000 ms *(Qwen-72B remote planning)* | **~40 ms** *(Local Laya classification)* | ⚡ **~75x Faster** |
-| **Time & Reminder Extraction** | ~1,800 ms *(Cloud LLM parsing)* | **~15 ms** *(Local Regex + Laya fallback)* | ⚡ **~120x Faster** |
-| **Media & Direct Play Resolution** | ~4,500 ms *(Vision snapshot + remote OCR)* | **~100 ms** *(ScreenContext URL / DOM resolver)* | ⚡ **~45x Faster** |
-| **Text & Code Generation** | ~3,500 ms *(HF Free Tier rate-limited)* | **~400 ms** *(Groq `qwen/qwen3.8-27b`)* | ⚡ **~9x Faster** |
-| **Network & API Cost** | Constant rate limits, high latency | **$0 for routing / 100% Local triage** | 🛡️ **Zero Rate Limits** |
-| **TOTAL END-TO-END PIPELINE** | **10.0s – 15.0s per command** | **1.2s – 2.2s per command** | 🚀 **~8x Overall Speedup!** |
+The metrics below are from actual end-to-end runs recorded in [`benchmark_report.md`](benchmark_report.md):
+
+#### 1. Direct Groq API Speed & Throughput (`qwen/qwen3.8-27b`)
+| Task | Latency | Tokens | Throughput | Real Behavior |
+| :--- | :--- | :--- | :--- | :--- |
+| **Knowledge & Fact Q&A** | **243.5 ms** | 62 tokens | **~254.6 tok/s** | Instant, concise factual synthesis |
+| **Python Code Generation** | **323.9 ms** | 100 tokens | **~308.7 tok/s** | Clean, formatted Python functions with docstrings |
+| **Multimodal Screen Vision** | **324.7 ms** | 7 tokens | **~21.6 tok/s** | Full 1280x720 JPEG screen inspection from RAM |
+| **Short Conversational** | **549.7 ms** | 14 tokens | **~25.5 tok/s** | Sub-second natural dialogue turnaround |
+
+#### 2. YouTube Instant Play Pipeline (`"play Jogi on youtube"`)
+| Step | Latency | Description |
+| :--- | :--- | :--- |
+| **1. Laya Action Decision** | **478.5 ms** | Classified action as `youtube_play` locally |
+| **2. Query Extraction** | **0.009 ms** | Zero-latency regex parameter extraction (`"Jogi"`) |
+| **3. Direct Video URL Resolution** | **1,061.6 ms** | Direct `urllib` fetch + regex extraction of `watch?v=HexFqifusOk` |
+| **⚡ Total Time Before Browser Launch** | **1,540.1 ms (1.54s)** | **Playback starts in ~1.5s (vs 6–10s with vision loops)** |
+
+#### 3. Full End-to-End Orchestrator Turnaround (Loop Latency)
+*Measured from user input ➔ Laya Supervisor routing ➔ Agent execution ➔ State update ➔ Asynchronous memory commit:*
+
+| Category | Example Command | Routed Agent | Routing | Execution | Memory | **Total Full Loop** |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Browser Navigation** | *"open github.com"* | Bumblebee | 743.5 ms | 0.01 ms | 0.02 ms | **743.5 ms** |
+| **Reminder Scheduling** | *"remind me to join team meeting at 5pm"* | Ironhide | 713.2 ms | 151.2 ms | 0.02 ms | **864.4 ms** |
+| **Chat / Knowledge Q&A** | *"What is the speed of light in vacuum?"* | Optimus | 451.2 ms | 300.6 ms | 228.9 ms | **980.7 ms** |
+| **Live News RSS** | *"give me brief current indian news only headlines"* | Optimus | 703.5 ms | 414.2 ms | 0.00 ms | **1,117.7 ms** |
+| **Code Synthesis** | *"write a python function to check palindrome"* | Wheeljack | 631.1 ms | 561.4 ms | 0.01 ms | **1,192.5 ms** |
+
+---
+
+## 🛡️ Failure Handling & Edge Case Recovery
+
+Optimus includes automatic recovery and graceful degradation across all failure modes:
+
+| Failure Scenario | Input Command | Recovery Mechanism | Recovery Time | System Behavior & Status |
+| :--- | :--- | :--- | :--- | :--- |
+| **Gibberish Input** | `"zxcvbnmasdfghjkl qwertyuiop 992834"` | Laya routes to chat/code | **617.4 ms** | **PASSED:** AI catches random keyboard input and politely asks for clarification instead of crashing. |
+| **Non-Existent App** | `"open HolographicTeleporterPro2099"` | Strict AppOpener lookup | **12.5 ms** | **PASSED:** Fast catch with voice feedback informing the user the app is not installed. |
+| **Malformed YouTube Query** | `"play '          '"` | Regex guard in `_search_youtube` | **804.6 ms** | **PASSED:** Safe fallback opens the default YouTube page without raising an unhandled exception. |
+| **Primary LLM Outage** | *(Simulated 404 / outage on primary model)* | Automatic failover to `openai/gpt-oss-120b` in `tools/llm.py` | **605.8 ms** | **PASSED:** Seamless automatic failover to the secondary Groq model with zero session drop. |
+| **Malformed Reminder Time** | `"remind me to do something at someday or maybe never"` | Regex + Laya ambiguity check | **656.8 ms** | **PASSED:** Returns `None`, safely preventing scheduling errors and prompting the user for a valid time. |
 
 ---
 
@@ -30,11 +63,11 @@ External LLMs (via high-speed **Groq Cloud API** or Hugging Face) are called **o
 | Character | Role | Engine / Model | Specialty | Color |
 |---|---|---|---|---|
 | **Optimus Prime** | Orchestrator & Chat | Local Laya + Groq Qwen 27B | High-level orchestration, dialog, news, app control | 🔵 Cyan |
-| **Bumblebee** | Browser Agent | Laya Action Triage + Playwright/Chrome | Direct tab manipulation, YouTube, Spotify, web continuity | 🟡 Yellow |
-| **Wheeljack** | Code Agent | Groq Qwen / Qwen-2.5-Coder-32B | Code synthesis, refactoring, execution, script generation | 🟢 Green |
+| **Bumblebee** | Browser Agent | Laya Action Triage + Chrome/Brave | Direct tab manipulation, YouTube, Spotify, web continuity | 🟡 Yellow |
+| **Wheeljack** | Code Agent | Groq `qwen/qwen3.8-27b` | Code synthesis, refactoring, debugging, execution | 🟢 Green |
 | **Ironhide** | Reminder Agent | Local Regex + Laya Fallback | Fast scheduling, alerts, Windows toast notifications | 🔴 Red |
 | **Perceptor** | Memory Agent | ChromaDB + LlamaIndex | Semantic conversation recall, user preferences, vector memory | 🔴 Dark Red |
-| **Vision** | Visual Grounding | Qwen 2.5-VL / Local ScreenContext | Screen understanding, UI coordinate scaling, element clicking | 🟡 Gold |
+| **Vision** | Visual Grounding | Groq Multimodal Vision / Local ScreenContext | Screen understanding, UI coordinate scaling, element clicking | 🟡 Gold |
 
 ---
 
@@ -48,19 +81,19 @@ External LLMs (via high-speed **Groq Cloud API** or Hugging Face) are called **o
 - **Friendly Spoken Feedback** — automatically sanitizes raw URLs into human-friendly names (e.g. *"Opened Spotify"* instead of reading raw HTTPS strings).
 
 ### 🌐 Smart Browser Automation (Bumblebee)
-- **Window & Tab Continuity** — detects existing active Chrome tabs via `ScreenContext` and focuses them instead of opening duplicates.
+- **Window & Tab Continuity** — detects existing active Chrome/Brave tabs via `ScreenContext` and focuses them instead of opening duplicates.
 - **In-Page Typing** — types prompts directly into active web apps like ChatGPT or search bars.
 - **Quick Tab Hotkeys** — handles *"new tab"*, *"close tab"*, *"switch to next tab"*, and *"reopen tab"* natively.
-- **Instant YouTube & Music Play** — *"Play Jogi on YouTube"* directly resolves and plays the top track without complex vision loops.
+- **Instant YouTube & Music Play** — *"Play Jogi on YouTube"* directly resolves and plays the top track in ~1.5s.
 
 ### 📰 Real-Time News Briefing
 - **Instant Google News RSS Engine** — pulls top headlines in under 100ms.
-- **Regional & Global Support** — supports localized editions (e.g., *"give me current indian news only headlines"*).
+- **Regional & Global Support** — supports localized editions (e.g., *"give me brief current indian news only headlines"*).
 
 ### 👁️ Screen Vision & Spatial Grounding
 - **RAM-Only Screen Capture** — captures high-resolution screenshots without writing to disk.
 - **Coordinate Scaling** — accurately translates bounding box percentages into physical screen pixel clicks.
-- **Laya Quick Triage** — routes simple UI actions locally and reserves heavy visual models for complex queries.
+- **Sub-Second Groq Multimodal Vision** — screen analysis completes in **~325ms**.
 
 ### 📱 System & App Control
 - **Strict App Launching** — leverages indexed system applications (VS Code, Spotify, Word, Calculator, etc.).
@@ -81,18 +114,20 @@ E:\optimus\
   ├── screen_context.py       ← ScreenContext (tracks active apps and browser URLs)
   ├── state.py                ← Shared AgentState TypedDict
   ├── demo_laya_agent.py      ← Interactive CLI demonstration for Laya decision triage
+  ├── test_benchmark_suite.py ← Comprehensive speed, loop, and failure test suite
+  ├── benchmark_report.md     ← Live benchmark results and latency report
   │
   ├── agents\
   │   ├── chat_agent.py       ← Optimus   | General conversation, news, app control
   │   ├── browser_agent.py    ← Bumblebee | Browser control, window focus, tab hotkeys
-  │   ├── code_agent.py       ← Wheeljack | Code generation via unified LLM
+  │   ├── code_agent.py       ← Wheeljack | Code generation via unified Groq LLM
   │   ├── memory_agent.py     ← Perceptor | Semantic ChromaDB + LlamaIndex memory
   │   ├── reminder_agent.py   ← Ironhide  | Fast regex/Laya time extraction & scheduling
   │   └── vision_agent.py     ← Vision    | Screen parsing and spatial element clicking
   │
   ├── tools\
   │   ├── laya_engine.py      ← Local Laya decision engine (ModernBERT classification)
-  │   ├── llm.py              ← Unified LLM client (Groq primary + HuggingFace fallback)
+  │   ├── llm.py              ← Unified LLM & Vision client (Groq qwen/qwen3.8-27b)
   │   └── registry.py         ← Central tool registry and URL sanitization
   │
   ├── ui\
@@ -104,7 +139,7 @@ E:\optimus\
   │   ├── conversation_log.jsonl ← Conversation history archive
   │   └── notes.txt           ← Persistent user notes
   │
-  └── .env                    ← GROQ_API_KEY, HF_TOKEN, CHROME_PATH
+  └── .env                    ← GROQ_API_KEY, CHROME_PATH
 ```
 
 ---
@@ -113,7 +148,7 @@ E:\optimus\
 
 ### Prerequisites
 - **Python 3.12** (installed from [python.org](https://www.python.org/downloads/) — avoid Microsoft Store builds)
-- **Google Chrome**
+- **Google Chrome** or **Brave Browser**
 
 ### 1. Clone & Environment Setup
 ```powershell
@@ -132,13 +167,10 @@ playwright install chromium
 ### 3. Environment Configuration (`.env`)
 Create a `.env` file in the root directory:
 ```env
-# Fast LLM Provider (Recommended for sub-second responses)
+# Fast LLM & Multimodal Vision Provider (Groq Cloud API)
 GROQ_API_KEY=your_groq_api_key_here
 
-# Hugging Face Token (Fallback LLM & Vision)
-HF_TOKEN=your_huggingface_token_here
-
-# Local Paths
+# Local Browser Path
 CHROME_PATH=C:\Program Files\Google\Chrome\Application\chrome.exe
 
 # Optional: Run in low-RAM mode
@@ -150,7 +182,12 @@ OPTIMUS_LOW_MEMORY=false
 python setup_apps.py
 ```
 
-### 5. Launch Optimus
+### 5. Run the Benchmark Suite (Optional)
+```powershell
+python test_benchmark_suite.py
+```
+
+### 6. Launch Optimus
 ```powershell
 python main.py
 ```
@@ -179,15 +216,15 @@ python main.py
 
 ## 🧠 Model Roster
 
-| Purpose | Model | Provider / Execution |
-|---|---|---|
-| **Local System 1 Decision Engine** | `convaiinnovations/laya` | 100% Local (PyTorch / ModernBERT) |
-| **High-Speed Conversational LLM** | `qwen/qwen3.8-27b` | Groq Cloud API (<500ms) |
-| **Fallback General LLM** | `Qwen/Qwen2.5-72B-Instruct` | Hugging Face Inference API |
-| **Code Generation** | `Qwen/Qwen2.5-Coder-32B-Instruct` | Groq / Hugging Face |
-| **Screen Vision & Grounding** | `Qwen/Qwen2.5-VL-7B-Instruct` | Hugging Face API |
-| **Vector Memory Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Local (sentence-transformers) |
-| **Voice Synthesis (TTS)** | `Edge TTS` (Ryan / Andrew / Thomas / Guy) | Microsoft Azure Free Tier |
+| Purpose | Model | Provider / Execution | Latency |
+|---|---|---|---|
+| **Local System 1 Decision Engine** | `convaiinnovations/laya` | 100% Local (PyTorch / ModernBERT) | ~400ms – 500ms |
+| **High-Speed Conversational LLM** | `qwen/qwen3.8-27b` | Groq Cloud API | ~240ms – 550ms |
+| **Code Generation** | `qwen/qwen3.8-27b` | Groq Cloud API | ~320ms (~308 tok/s) |
+| **Screen Vision & Spatial Grounding** | `qwen/qwen3.8-27b` | Groq Cloud API (Multimodal Vision) | ~325ms |
+| **Secondary Text Fallback** | `openai/gpt-oss-120b` | Groq Cloud API | Failover Model |
+| **Vector Memory Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Local (sentence-transformers) | ~150ms |
+| **Voice Synthesis (TTS)** | `Edge TTS` (Ryan / Andrew / Thomas / Guy) | Microsoft Azure Free Tier | Real-Time Stream |
 
 ---
 
