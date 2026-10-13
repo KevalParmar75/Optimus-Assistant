@@ -51,7 +51,6 @@ def friendly_url_name(url: str) -> str:
 class BrowserAgent:
     def __init__(self):
         self._lock       = threading.Lock()
-        self._client     = None
         self._is_open    = False
         self._last_url   = ""
         self._vision     = None   # injected by main after init
@@ -60,12 +59,6 @@ class BrowserAgent:
     def set_vision(self, vision_agent):
         """Inject vision agent after both are initialized."""
         self._vision = vision_agent
-
-    def _get_client(self):
-        if self._client is None:
-            from huggingface_hub import InferenceClient
-            self._client = InferenceClient(token=os.getenv("HF_TOKEN"))
-        return self._client
 
     def _get_browser_exe(self):
         """Find the executable path for the currently running or installed browser (preferring Brave)."""
@@ -190,8 +183,6 @@ class BrowserAgent:
             return f"Opened {friendly_url_name(cmd_strip)}."
 
         with self._lock:
-            client = self._get_client()
-
             plan_prompt = f"""You are Bumblebee, a browser assistant.
 
 Current session: {self._is_open}
