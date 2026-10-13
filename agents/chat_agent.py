@@ -178,7 +178,6 @@ def _open_and_type(app_name: str, content: str) -> str:
 
 class ChatAgent:
     def __init__(self):
-        self._client = None
         self._vision = None
         self._laya   = None
         print("[Optimus] Chat agent online.")
@@ -191,14 +190,6 @@ class ChatAgent:
             from tools.laya_engine import LayaEngine
             self._laya = LayaEngine.get_instance()
         return self._laya
-
-    def _get_client(self):
-        if self._client is None:
-            from dotenv import load_dotenv
-            load_dotenv()
-            from huggingface_hub import InferenceClient
-            self._client = InferenceClient(token=os.getenv("HF_TOKEN"))
-        return self._client
 
     def _ask(self, messages: list, max_tokens: int = 256) -> str:
         try:
