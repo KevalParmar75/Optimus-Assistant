@@ -79,6 +79,13 @@ class ScreenContext:
         self._active_app = app_name.lower().strip()
         self._last_updated = time.time()
 
+    @property
+    def active_app(self) -> str:
+        return self._active_app or ""
+
+    def get_active_app(self) -> str:
+        return self._active_app or ""
+
     # ── Reader (called by supervisor) ──
 
     def summary(self) -> str:
