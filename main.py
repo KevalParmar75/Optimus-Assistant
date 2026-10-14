@@ -436,19 +436,20 @@ class Supervisor:
             agent = "chat"
 
         # ── Post-Laya Sanity Checks ──
-        # Guard: questions/inquiries should never mistakenly run browser actions
-        if agent == "browser":
+        # Guard: questions/inquiries should never mistakenly run browser or code actions
+        if agent in ["browser", "code"]:
             is_question = any(cmd_low.startswith(q) for q in [
                 "is ", "are ", "can you ", "could you ", "do you ", "what is ",
                 "what are ", "who is ", "where is ", "why ", "how is ", "how do ",
                 "how can ", "tell me about ", "tell me if ", "check if ", "which "
             ]) or cmd_low.endswith("?")
-            has_browser_action = any(w in cmd_low for w in [
+            has_action = any(w in cmd_low for w in [
                 "open", "go to", "search", "google", "look up", "play", "youtube",
-                "watch", "visit", "browse", "navigate", ".com", ".org", "http"
+                "watch", "visit", "browse", "navigate", ".com", ".org", "http",
+                "code", "python", "script", "function", "program", "write a", "implement", "debug"
             ])
-            if is_question and not has_browser_action:
-                print(f"[Supervisor] Guard override: '{cmd_low}' -> chat (question, not browser action)")
+            if is_question and not has_action:
+                print(f"[Supervisor] Guard override: '{cmd_low}' -> chat (question, not {agent} action)")
                 agent = "chat"
 
         # ── Post-routing: fill tool_name/tool_args for downstream agents ──
