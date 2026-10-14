@@ -98,8 +98,11 @@ def _open_app(name: str) -> str:
     )
     target = appopener_name or name_clean
     try:
-        from AppOpener import open as appopen
-        appopen(target, match_closest=(appopener_name is None), output=False)
+        from AppOpener import open as appopen, give_appnames
+        installed = give_appnames()
+        if target.lower() not in installed and target not in APP_NAME_MAP.values():
+            return f"Application '{target}' is not installed."
+        appopen(target, match_closest=False, output=False)
         screen_context.app_opened(target)
         return f"Opening {target}."
     except Exception as e:
