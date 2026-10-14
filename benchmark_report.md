@@ -63,5 +63,5 @@
 ## 💡 Key Findings & Performance Conclusions
 1. **API Response Speed:** Groq Cloud API delivers tokens at **200 – 350+ tokens/second** with latency as low as **230ms - 450ms** for full text and **~320ms** for high-resolution screen vision.
 2. **YouTube Song Resolution:** Song queries are resolved to direct video playback URLs in **~1.6 seconds** total without browser vision loops.
-3. **End-to-End User Turnaround:** Typical user commands complete a full loop (Routing -> Execution -> State -> Memory) in **460ms to 1290ms**.
+3. **End-to-End User Turnaround:** Typical user commands complete a full loop (Routing -> Execution -> State -> Memory) in **743 ms to 1,192 ms** (~0.7s to 1.2s).
 4. **Resilience:** Unrecognized commands, missing applications, malformed time queries, and simulated primary API outages are all safely recovered with 0 process crashes.
