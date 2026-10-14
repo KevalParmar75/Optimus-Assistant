@@ -7,54 +7,61 @@ A modular, voice and text-controlled multi-agent desktop assistant built around 
 
 ## ⚡ The Laya Engine & Live Benchmark Metrics
 
-Optimus uses **Laya** (`convaiinnovations/laya`), a state-of-the-art non-autoregressive decision model running **100% locally on-device**. By utilizing ModernBERT architecture for intent routing and tactical action planning, Optimus eliminates slow cloud LLM roundtrips for all operational decisions.
+Optimus integrates **Laya** (`convaiinnovations/laya`), a state-of-the-art non-autoregressive decision model running **100% locally on-device**. By utilizing ModernBERT architecture for intent routing and tactical action planning, Optimus eliminates slow cloud LLM roundtrips for all operational decisions.
 
 External LLMs (via high-speed **Groq Cloud API**) are called **only** when deep, open-ended conversational generation is strictly needed.
 
 ### 📊 Measured Benchmark Results (Verified on Windows / Python 3.12)
 
-The metrics below are from actual end-to-end runs recorded in [`benchmark_report.md`](benchmark_report.md):
+The metrics below are from actual end-to-end runs recorded in [`benchmark_report.md`](benchmark_report.md) (Executed: `2026-10-13 19:40:16`):
 
-#### 1. Direct Groq API Speed & Throughput (`qwen/qwen3.8-27b`)
-| Task | Latency | Tokens | Throughput | Real Behavior |
+#### 1. Local Laya Decision Engine Cold vs. Warm Latency
+- **Cold Start (Model Weights Load to RAM):** `33,207.14 ms` (~33.2s, occurs only once on first boot)
+- **Warm Decision Inference:** `495.13 ms` (sub-second local classification with 0 network calls)
+- **Sample Test Decision:** `browser`
+
+#### 2. Direct Groq API Speed & Throughput (`qwen/qwen3.8-27b`)
+| Task | Latency (ms) | Tokens Generated | Throughput (Tokens/sec) | Sample Output |
 | :--- | :--- | :--- | :--- | :--- |
-| **Knowledge & Fact Q&A** | **243.5 ms** | 62 tokens | **~254.6 tok/s** | Instant, concise factual synthesis |
-| **Python Code Generation** | **323.9 ms** | 100 tokens | **~308.7 tok/s** | Clean, formatted Python functions with docstrings |
-| **Multimodal Screen Vision** | **324.7 ms** | 7 tokens | **~21.6 tok/s** | Full 1280x720 JPEG screen inspection from RAM |
-| **Short Conversational** | **549.7 ms** | 14 tokens | **~25.5 tok/s** | Sub-second natural dialogue turnaround |
+| **Knowledge & Fact Q&A** | `243.48 ms` | 62 tokens | **~254.6 tok/s** | *"Quantum computers leverage the principles of superposition and entanglement..."* |
+| **Python Code Generation** | `323.89 ms` | 100 tokens | **~308.7 tok/s** | `def reverse_string(s: str) -> str: ...` |
+| **Multimodal Screen Vision** | `324.66 ms` | 7 tokens | **~21.6 tok/s** | *"Black screen with white text, minimalistic design..."* |
+| **Short Conversational** | `549.66 ms` | 14 tokens | **~25.5 tok/s** | *"I am Qwen, here to help you with any questions..."* |
 
-#### 2. YouTube Instant Play Pipeline (`"play Jogi on youtube"`)
-| Step | Latency | Description |
+#### 3. YouTube Direct Play Resolution Speed (`"play Jogi on youtube"`)
+| Pipeline Step | Time Taken (ms) | Output / Details |
 | :--- | :--- | :--- |
-| **1. Laya Action Decision** | **478.5 ms** | Classified action as `youtube_play` locally |
-| **2. Query Extraction** | **0.009 ms** | Zero-latency regex parameter extraction (`"Jogi"`) |
-| **3. Direct Video URL Resolution** | **1,061.6 ms** | Direct `urllib` fetch + regex extraction of `watch?v=HexFqifusOk` |
-| **⚡ Total Time Before Browser Launch** | **1,540.1 ms (1.54s)** | **Playback starts in ~1.5s (vs 6–10s with vision loops)** |
+| **1. Laya Action Triage** | `478.49 ms` | Classified action as `youtube_play` |
+| **2. Song Parameter Extraction** | `0.009 ms` | Extracted query: `Jogi` via zero-latency regex |
+| **3. Direct Video URL Resolution** | `1,061.56 ms` | Direct `urllib` fetch + regex extraction of `watch?v=HexFqifusOk` |
+| **⚡ TOTAL TIME BEFORE BROWSER LAUNCH** | **`1,540.06 ms`** | **Direct playback URL resolved in ~1.54s (vs 6–10s with vision loops)** |
 
-#### 3. Full End-to-End Orchestrator Turnaround (Loop Latency)
+#### 4. Full End-to-End Orchestrator Loop Turnaround
 *Measured from user input ➔ Laya Supervisor routing ➔ Agent execution ➔ State update ➔ Asynchronous memory commit:*
 
-| Category | Example Command | Routed Agent | Routing | Execution | Memory | **Total Full Loop** |
+| Workflow Category | Test Command | Routed Agent | Laya Routing (ms) | Execution (ms) | Memory Commit (ms) | **Full Loop (ms)** |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Browser Navigation** | *"open github.com"* | Bumblebee | 743.5 ms | 0.01 ms | 0.02 ms | **743.5 ms** |
-| **Reminder Scheduling** | *"remind me to join team meeting at 5pm"* | Ironhide | 713.2 ms | 151.2 ms | 0.02 ms | **864.4 ms** |
-| **Chat / Knowledge Q&A** | *"What is the speed of light in vacuum?"* | Optimus | 451.2 ms | 300.6 ms | 228.9 ms | **980.7 ms** |
-| **Live News RSS** | *"give me brief current indian news only headlines"* | Optimus | 703.5 ms | 414.2 ms | 0.00 ms | **1,117.7 ms** |
-| **Code Synthesis** | *"write a python function to check palindrome"* | Wheeljack | 631.1 ms | 561.4 ms | 0.01 ms | **1,192.5 ms** |
+| **Browser Navigation** | *"open github.com"* | `browser` (Bumblebee) | `743.46 ms` | `0.01 ms` | `0.02 ms` | **`743.5 ms`** |
+| **Reminder Scheduling** | *"remind me to join team meeting at 5pm"* | `reminder` (Ironhide) | `713.17 ms` | `151.2 ms` | `0.02 ms` | **`864.4 ms`** |
+| **Chat / Q&A** | *"What is the speed of light in vacuum?"* | `code` (Wheeljack)* | `451.21 ms` | `300.64 ms` | `228.88 ms` | **`980.73 ms`** |
+| **Live News RSS** | *"give me brief current indian news only headlines"* | `browser` (Bumblebee)* | `703.53 ms` | `414.17 ms` | `0.02 ms` | **`1,117.73 ms`** |
+| **Code Synthesis** | *"write a python function to check palindrome"* | `code` (Wheeljack) | `631.09 ms` | `561.37 ms` | `0.01 ms` | **`1,192.47 ms`** |
+
+> *\*Note on Routing:* In isolated benchmark testing of raw model classification, Laya routed knowledge Q&A to `code` and news queries to `browser`. In the full application, Supervisor Tier-1 shortcuts and question guards override these to Optimus (`chat`) before agent dispatch.
 
 ---
 
-## 🛡️ Failure Handling & Edge Case Recovery
+## 🛡️ Failure Modes & Edge Case Recovery
 
 Optimus includes automatic recovery and graceful degradation across all failure modes:
 
-| Failure Scenario | Input Command | Recovery Mechanism | Recovery Time | System Behavior & Status |
+| Failure Scenario | Input Command | Recovery Mechanism | Recovery Latency | Status & Behavior |
 | :--- | :--- | :--- | :--- | :--- |
-| **Gibberish Input** | `"zxcvbnmasdfghjkl qwertyuiop 992834"` | Laya routes to chat/code | **617.4 ms** | **PASSED:** AI catches random keyboard input and politely asks for clarification instead of crashing. |
-| **Non-Existent App** | `"open HolographicTeleporterPro2099"` | Strict AppOpener lookup | **12.5 ms** | **PASSED:** Fast catch with voice feedback informing the user the app is not installed. |
-| **Malformed YouTube Query** | `"play '          '"` | Regex guard in `_search_youtube` | **804.6 ms** | **PASSED:** Safe fallback opens the default YouTube page without raising an unhandled exception. |
-| **Primary LLM Outage** | *(Simulated 404 / outage on primary model)* | Automatic failover to `openai/gpt-oss-120b` in `tools/llm.py` | **605.8 ms** | **PASSED:** Seamless automatic failover to the secondary Groq model with zero session drop. |
-| **Malformed Reminder Time** | `"remind me to do something at someday or maybe never"` | Regex + Laya ambiguity check | **656.8 ms** | **PASSED:** Returns `None`, safely preventing scheduling errors and prompting the user for a valid time. |
+| **Gibberish / Malformed Input** | *"zxcvbnmasdfghjkl qwertyuiop 992834"* | Laya routed to 'code', AI answered gracefully | `617.42 ms` | **PASSED (Safe conversational response)** |
+| **Non-Existent App Launch** | *"open HolographicTeleporterPro2099"* | Strict AppOpener & system registry fallback | `12.51 ms` | **PASSED (Non-crashing user notification)** |
+| **Empty/Malformed YouTube Query** | *"play '          '"* | Regex guard + safe fallback to YouTube default | `804.6 ms` | **PASSED (Clean URL fallback)** |
+| **Simulated Primary LLM Outage** | *"User conversational prompt during primary failure"* | Automatic failover to 'openai/gpt-oss-120b' | `605.76 ms` | **PASSED (Seamless failover)** |
+| **Malformed / Unparseable Reminder Time** | *"remind me to do something at someday or maybe never"* | Regex + Laya returns None, prompts user politely | `656.81 ms` | **PASSED (Safe None return, no crash)** |
 
 ---
 
@@ -84,24 +91,24 @@ Optimus includes automatic recovery and graceful degradation across all failure 
 - **Window & Tab Continuity** — detects existing active Chrome/Brave tabs via `ScreenContext` and focuses them instead of opening duplicates.
 - **In-Page Typing** — types prompts directly into active web apps like ChatGPT or search bars.
 - **Quick Tab Hotkeys** — handles *"new tab"*, *"close tab"*, *"switch to next tab"*, and *"reopen tab"* natively.
-- **Instant YouTube & Music Play** — *"Play Jogi on YouTube"* directly resolves and plays the top track in ~1.5s.
+- **Instant YouTube & Music Play** — *"Play Jogi on YouTube"* directly resolves and plays the top track in `1,540.06 ms`.
 
 ### 📰 Real-Time News Briefing
-- **Instant Google News RSS Engine** — pulls top headlines in under 100ms.
+- **Instant Google News RSS Engine** — pulls top headlines in `~414 ms` with zero LLM lag and no rate limits.
 - **Regional & Global Support** — supports localized editions (e.g., *"give me brief current indian news only headlines"*).
 
 ### 👁️ Screen Vision & Spatial Grounding
 - **RAM-Only Screen Capture** — captures high-resolution screenshots without writing to disk.
 - **Coordinate Scaling** — accurately translates bounding box percentages into physical screen pixel clicks.
-- **Sub-Second Groq Multimodal Vision** — screen analysis completes in **~325ms**.
+- **Sub-Second Groq Multimodal Vision** — screen analysis completes in `324.66 ms`.
 
 ### 📱 System & App Control
-- **Strict App Launching** — leverages indexed system applications (VS Code, Spotify, Word, Calculator, etc.).
+- **Strict App Launching** — leverages indexed system applications (VS Code, Spotify, Word, Calculator, etc.) with instant non-crashing validation (`12.51 ms`).
 - **Word Document Automation** — direct COM automation for opening and interacting with Microsoft Word.
 
 ### 🧠 Persistent Memory & Recall (Perceptor)
 - **Zero-Lag Background Commits** — saves conversational turns asynchronously in the background.
-- **Semantic Vector Storage** — ChromaDB + sentence-transformers for contextual recall (*"Do you remember what we talked about yesterday?"*).
+- **Semantic Vector Storage** — ChromaDB + sentence-transformers for contextual recall (`228.88 ms` commit time).
 - **Low Memory Mode** — support for `OPTIMUS_LOW_MEMORY=true` with lazy model loading.
 
 ---
@@ -218,12 +225,12 @@ python main.py
 
 | Purpose | Model | Provider / Execution | Latency |
 |---|---|---|---|
-| **Local System 1 Decision Engine** | `convaiinnovations/laya` | 100% Local (PyTorch / ModernBERT) | ~400ms – 500ms |
-| **High-Speed Conversational LLM** | `qwen/qwen3.8-27b` | Groq Cloud API | ~240ms – 550ms |
-| **Code Generation** | `qwen/qwen3.8-27b` | Groq Cloud API | ~320ms (~308 tok/s) |
-| **Screen Vision & Spatial Grounding** | `qwen/qwen3.8-27b` | Groq Cloud API (Multimodal Vision) | ~325ms |
-| **Secondary Text Fallback** | `openai/gpt-oss-120b` | Groq Cloud API | Failover Model |
-| **Vector Memory Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Local (sentence-transformers) | ~150ms |
+| **Local System 1 Decision Engine** | `convaiinnovations/laya` | 100% Local (PyTorch / ModernBERT) | `495.13 ms` (warm) / `~33.2s` (cold boot) |
+| **High-Speed Conversational LLM** | `qwen/qwen3.8-27b` | Groq Cloud API | `243.48 ms – 549.66 ms` |
+| **Code Generation** | `qwen/qwen3.8-27b` | Groq Cloud API | `323.89 ms` (~308.7 tok/s) |
+| **Screen Vision & Spatial Grounding** | `qwen/qwen3.8-27b` | Groq Cloud API (Multimodal Vision) | `324.66 ms` |
+| **Secondary Text Fallback** | `openai/gpt-oss-120b` | Groq Cloud API | Failover Model (`605.76 ms`) |
+| **Vector Memory Embeddings** | `sentence-transformers/all-MiniLM-L6-v2` | Local (sentence-transformers) | `228.88 ms` (commit) |
 | **Voice Synthesis (TTS)** | `Edge TTS` (Ryan / Andrew / Thomas / Guy) | Microsoft Azure Free Tier | Real-Time Stream |
 
 ---
